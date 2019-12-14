@@ -27,6 +27,9 @@
 #ifdef CONFIG_AMLOGIC_MEDIA_DEINTERLACE
 #define ENABLE_PLINK
 #endif
+#ifdef CONFIG_AMLOGIC_MEDIA_VIDEOCAPTURE
+#include "amvideocap_priv.h"
+#endif
 
 #define VIDEO_ENABLE_STATE_IDLE       0
 #define VIDEO_ENABLE_STATE_ON_REQ     1
@@ -705,6 +708,10 @@ struct video_layer_s {
 	u32 frc_h_size_pre;
 	u32 frc_v_size_pre;
 	u32 cur_vf_type;
+#ifdef CONFIG_AMLOGIC_MEDIA_VIDEOCAPTURE
+	atomic_t capture_use_cnt;
+	struct amvideocap_req *capture_frame_req;
+#endif
 };
 
 struct video_lcevc_s {
@@ -857,6 +864,14 @@ enum {
 	OSD_PROBE,
 	POST_PROBE,
 };
+
+#ifdef CONFIG_AMLOGIC_MEDIA_VIDEOCAPTURE
+enum video_capture_state {
+	CAPTURE_STATE_OFF = 0,
+	CAPTURE_STATE_ON = 1,
+	CAPTURE_STATE_CAPTURE = 2,
+};
+#endif
 
 /* from video_hw.c */
 extern struct video_layer_s vd_layer[MAX_VD_LAYER];
@@ -1140,7 +1155,11 @@ struct vframe_s *dv_toggle_frame(struct vframe_s *vf,
 #endif
 
 #ifdef CONFIG_AMLOGIC_MEDIA_VIDEOCAPTURE
-int ext_frame_capture_poll(int endflags);
+int ext_frame_capture_poll(struct vframe_s *vf);
+int ext_get_cur_video_frame(struct vframe_s **vf, int *canvas_index);
+int ext_put_video_frame(struct vframe_s *vf);
+struct amvideocap_req;
+int ext_register_end_frame_callback(struct amvideocap_req *req);
 #endif
 bool is_meson_tm2_revb(void);
 bool video_is_meson_sc2_cpu(void);
