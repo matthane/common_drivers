@@ -3301,6 +3301,7 @@ static u32 codec_mm_scatter_get_reserved_block_size(void)
 	int alloc_mode =
 		codec_mm_get_property_from_dts("scatter_alloc_mode");
 	u32 total_size = codec_mm_get_total_size() / SZ_1M;
+	int reserved_size = codec_mm_get_reserved_size();
 
 	if (alloc_mode < 0)
 		alloc_mode = SCATTER_ALLOC_FROM_DEFAULT;
@@ -3319,7 +3320,7 @@ static u32 codec_mm_scatter_get_reserved_block_size(void)
 			codec_mm_get_property_from_dts("reserved_block_size");
 		if (reserved_block_size > total_size ||
 			reserved_block_size < 0) {
-			ret = 300;
+			ret = (reserved_size > 0) ? reserved_size / SZ_1M : 0;
 			pr_info("reserved_block_size is %d, reset as 300.\n",
 				reserved_block_size);
 		} else {
@@ -3329,7 +3330,7 @@ static u32 codec_mm_scatter_get_reserved_block_size(void)
 
 	case SCATTER_ALLOC_FROM_DEFAULT:
 	default:
-		ret = 300;
+		ret = (reserved_size > 0) ? reserved_size / SZ_1M : 0;
 	}
 
 	return ret;
@@ -3520,4 +3521,3 @@ int codec_mm_scatter_test(int mode, int p1, int p2)
 	return 0;
 }
 EXPORT_SYMBOL(codec_mm_scatter_test);
-
