@@ -643,6 +643,7 @@ int get_dv_support_info(void);
 bool support_multi_core1(void);
 bool is_hdmi_ll_as_hdr10(void);
 int get_amdv_src_format(enum vd_path_e vd_path, struct vframe_s *vf);
+bool is_amdv_sdr2020_force_hlg(void);
 #endif
 
 enum vpp_matrix_ext_csc_e {
