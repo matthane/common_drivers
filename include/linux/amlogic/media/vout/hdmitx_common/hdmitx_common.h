@@ -196,6 +196,10 @@ struct hdmitx_common {
 	 * if value is not changed, the skip massive qms log
 	 */
 	u64 qms_log_id;
+
+	u32 flag_3dfp;
+	u32 flag_3dtb;
+	u32 flag_3dss;
 };
 
 void hdmitx_get_init_state(struct hdmitx_common *tx_common,
