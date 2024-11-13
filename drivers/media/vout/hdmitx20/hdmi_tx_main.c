@@ -3534,6 +3534,7 @@ static int amhdmitx_device_init(struct hdmitx_dev *hdmi_dev)
 
 	hdmi_dev->hdmi_last_hdr_mode = 0;
 	hdmi_dev->hdmi_current_hdr_mode = 0;
+	hdmi_dev->tx_comm.hdr_priority = 0;
 	/* hdr/vsif packet status init, no need to get actual status,
 	 * force to print function callback for confirmation.
 	 */

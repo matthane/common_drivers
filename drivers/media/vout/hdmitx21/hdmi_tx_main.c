@@ -3460,6 +3460,7 @@ static int amhdmitx21_device_init(struct hdmitx_dev *hdev)
 	hdev->tx_comm.rxcap.physical_addr = 0xffff;
 	hdev->hdmi_last_hdr_mode = 0;
 	hdev->hdmi_current_hdr_mode = 0;
+	hdev->tx_comm.hdr_priority = 0;
 	hdev->tx_comm.ready = 0;
 	hdev->tx_comm.rxsense_policy = 0; /* no RxSense by default */
 	/* enable or disable HDMITX SSPLL, enable by default */
