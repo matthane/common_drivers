@@ -43,10 +43,13 @@ static size_t cal_fbdev_afbc_size(struct fb_info *info)
 	size_t size;
 	u32 aligned_width, aligned_height, pixel_size;
 	u32 stride, buf_num, buf_size, block_count;
+	struct drm_fb_helper *helper = info->par;
+	struct drm_device *dev = helper->dev;
+	struct meson_drm *private = dev->dev_private;
 
-	aligned_width = ALIGN(info->var.xres, AFBC_TILED_HEADERS_WIDEBLK_WIDTH_ALIGN);
-	aligned_height = ALIGN(info->var.yres, AFBC_TILED_HEADERS_WIDEBLK_HEIGHT_ALIGN);
-	pixel_size = info->var.bits_per_pixel / 8;
+	aligned_width = ALIGN(private->ui_config.ui_w, AFBC_TILED_HEADERS_WIDEBLK_WIDTH_ALIGN);
+	aligned_height = ALIGN(private->ui_config.ui_h, AFBC_TILED_HEADERS_WIDEBLK_HEIGHT_ALIGN);
+	pixel_size = private->ui_config.fb_bpp / 8;
 	stride = aligned_width * pixel_size;
 	stride = ALIGN(stride, 64);
 	block_count = aligned_width / AFBC_PIXELS_PER_BLOCK *
