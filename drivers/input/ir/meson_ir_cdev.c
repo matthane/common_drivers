@@ -90,9 +90,44 @@ static long meson_ir_ioctl(struct file *file, unsigned int cmd,
 				goto err;
 			}
 
+			/*
 			for (i = 0; i < chip->r_dev->input_dev_num; i++)
 				meson_ir_input_configure(chip->r_dev->input_devs[i],
 							 &ir_map->tab);
+			*/
+
+			// register new input device if not already done by driver probe
+			if (chip->r_dev->input_dev_num == 0)
+			{
+				struct input_dev *input_device;
+				const char *name;
+
+				chip->r_dev->input_devs = devm_kzalloc(chip->dev,
+								 sizeof(struct input_dev *),
+								 GFP_KERNEL);
+
+				input_device = devm_input_allocate_device(chip->dev);
+				if (!input_device)
+					return -ENOMEM;
+				name = devm_kasprintf(chip->dev, GFP_KERNEL, "ir_keypad%d_%d",
+						      chip->dev_no, chip->r_dev->input_dev_num);
+
+				input_device->name = name;
+				input_device->phys = "keypad/input0";
+				input_device->dev.parent = chip->dev;
+				memcpy(&input_device->id, &ir_map->tab.id,
+				       sizeof(struct input_id));
+				input_device->rep[REP_DELAY] = 0xffffffff;  /*close input repeat*/
+				input_device->rep[REP_PERIOD] = 0xffffffff; /*close input repeat*/
+
+				meson_ir_input_configure(input_device, NULL);
+				input_set_drvdata(input_device, chip->r_dev);
+				input_register_device(input_device);
+
+				chip->r_dev->input_devs[chip->r_dev->input_dev_num] = input_device;
+				chip->r_dev->input_dev_num++;
+			}
+
 			/*scancode sort*/
 			meson_ir_scancode_sort(&ir_map->tab);
 
