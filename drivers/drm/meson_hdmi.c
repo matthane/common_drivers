@@ -1039,6 +1039,9 @@ static int am_hdmitx_connector_atomic_set_property
 		attr->bitdepth = val;
 		hdmitx_state->color_force = true;
 		return 0;
+	} else if (property == am_hdmi->color_force) {
+		hdmitx_state->color_force = val;
+		return 0;
 	} else if (property == am_hdmi->avmute_prop) {
 		hdmitx_state->avmute = val;
 		return 0;
@@ -1082,6 +1085,9 @@ static int am_hdmitx_connector_atomic_get_property
 		return 0;
 	} else if (property == am_hdmi->color_depth_prop) {
 		*val = attr->bitdepth;
+		return 0;
+	} else if (property == am_hdmi->color_force) {
+		*val = hdmitx_state->color_force;
 		return 0;
 	} else if (property == am_hdmi->avmute_prop) {
 		*val = hdmitx_state->avmute;
@@ -2468,6 +2474,20 @@ static void meson_hdmitx_init_colordepth_property(struct drm_device *drm_dev,
 	}
 }
 
+static void meson_hdmitx_init_color_force_property(struct drm_device *drm_dev,
+						  struct am_hdmi_tx *am_hdmi)
+{
+	struct drm_property *prop;
+
+	prop = drm_property_create_bool(drm_dev, 0, "color_force");
+	if (prop) {
+		am_hdmi->color_force = prop;
+		drm_object_attach_property(&am_hdmi->base.connector.base, prop, 0);
+	} else {
+		DRM_ERROR("Failed to color_force property\n");
+	}
+}
+
 static void meson_hdmitx_init_hdr_cap_property(struct drm_device *drm_dev,
 						  struct am_hdmi_tx *am_hdmi)
 {
@@ -2940,6 +2960,7 @@ int meson_hdmitx_dev_bind(struct drm_device *drm,
 	/*amlogic prop*/
 	meson_hdmitx_init_property(drm, am_hdmi);
 	meson_hdmitx_init_colordepth_property(drm, am_hdmi);
+	meson_hdmitx_init_color_force_property(drm, am_hdmi);
 	meson_hdmitx_init_colorspace_property(drm, am_hdmi);
 	meson_hdmitx_init_avmute_property(drm, am_hdmi);
 	meson_hdmitx_init_hdmi_hdr_status_property(drm, am_hdmi);
