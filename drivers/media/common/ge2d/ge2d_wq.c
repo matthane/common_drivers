@@ -977,7 +977,7 @@ int ge2d_wq_add_work(struct ge2d_context_s *wq, int enqueue)
 	unsigned int block = 0;
 
 	ge2d_log_dbg("add new work @@%s:%d\n", __func__, __LINE__);
-	pitem = kmalloc(sizeof(*pitem), GFP_KERNEL);
+	pitem = kmalloc(sizeof(*pitem), GFP_ATOMIC);
 	if (!pitem)
 		goto error;
 
@@ -1323,7 +1323,7 @@ int ge2d_set_clut_table(struct ge2d_context_s *context, unsigned long args)
 		return -1;
 	}
 	if (clut8_table_t.count > 0 && clut8_table_t.count <= 256) {
-		data = kcalloc(clut8_table_t.count, sizeof(u32), GFP_KERNEL);
+		data = kcalloc(clut8_table_t.count, sizeof(u32), GFP_ATOMIC);
 		if (!data)
 			return -1;
 		memcpy(data, &clut8_table_t.data, clut8_table_t.count * sizeof(u32));
@@ -1553,7 +1553,7 @@ build_ge2d_addr_config_dma(struct ge2d_context_s *context,
 			if (!cfg)
 				return -1;
 
-			dma_cfg = kzalloc(sizeof(*dma_cfg), GFP_KERNEL);
+			dma_cfg = kzalloc(sizeof(*dma_cfg), GFP_ATOMIC);
 			if (!dma_cfg)
 				return ret;
 			dma_cfg->fd = plane[i].shared_fd;
@@ -1714,7 +1714,7 @@ static int build_ge2d_config_ex_dma(struct ge2d_context_s *context,
 				if (!cfg)
 					return -1;
 
-				dma_cfg = kzalloc(sizeof(*dma_cfg), GFP_KERNEL);
+				dma_cfg = kzalloc(sizeof(*dma_cfg), GFP_ATOMIC);
 				if (!dma_cfg)
 					return ret;
 				dma_cfg->fd = plane[i].shared_fd;
@@ -3001,7 +3001,7 @@ int ge2d_ioctl_attach_dma_fd(struct ge2d_context_s *wq,
 			if (!cfg)
 				return -1;
 			cfg->dma_used[i] = 1;
-			dma_cfg = kzalloc(sizeof(*dma_cfg), GFP_KERNEL);
+			dma_cfg = kzalloc(sizeof(*dma_cfg), GFP_ATOMIC);
 			if (!dma_cfg) {
 				ge2d_log_err("%s, kzalloc error\n", __func__);
 				return ret;
@@ -3070,7 +3070,7 @@ struct ge2d_context_s *create_ge2d_work_queue(void)
 
 	if (!ge2d_manager.probe)
 		return NULL;
-	ge2d_work_queue = kzalloc(sizeof(*ge2d_work_queue), GFP_KERNEL);
+	ge2d_work_queue = kzalloc(sizeof(*ge2d_work_queue), GFP_ATOMIC);
 	if (!ge2d_work_queue) {
 		ge2d_log_err("can't create work queue\n");
 		return NULL;
