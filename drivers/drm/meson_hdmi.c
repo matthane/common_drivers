@@ -1127,11 +1127,12 @@ int meson_hdmitx_atomic_check(struct drm_connector *connector,
 				meson_crtc_state->attr_changed = true;
 			}
 		}
-
+/*
 		if (new_hdmitx_state->frac_rate_policy !=
 				old_hdmitx_state->frac_rate_policy) {
 			new_crtc_state->mode_changed = true;
 		}
+*/
 	}
 
 	return 0;
