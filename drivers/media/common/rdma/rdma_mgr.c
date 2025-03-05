@@ -1510,6 +1510,7 @@ int rdma_write_reg(int handle, u32 adr, u32 val)
 	if (ins->rdma_table_size == 0)
 		return -1;
 	if ((get_rdma_handle(VSYNC_RDMA) == handle) &&
+		(cur_cpuid == 0) &&
 		(cur_cpuid != rdma_done_cpuid ||
 		(!is_in_vsync_isr(cur_cpuid) &&
 #ifdef CONFIG_AMLOGIC_BL_LDIM
@@ -1812,6 +1813,7 @@ int rdma_part_write_reg(int tbl_index, int handle, u32 adr, u32 val)
 	u8 cur_cpuid = smp_processor_id();
 
 	if ((get_rdma_handle(VSYNC_RDMA) == handle) &&
+		(cur_cpuid == 0) &&
 		(cur_cpuid != rdma_done_cpuid ||
 		(!is_in_vsync_isr(cur_cpuid) &&
 #ifdef CONFIG_AMLOGIC_BL_LDIM
