@@ -4331,7 +4331,7 @@ static int meson_mmc_probe(struct platform_device *pdev)
 		goto err_init_clk;
 	if (aml_card_type_mmc(host)) {
 		mmc->caps |= MMC_CAP_CMD23;
-		mmc->caps2 |= MMC_CAP2_FULL_PWR_CYCLE;
+		mmc->caps2 |= MMC_CAP2_FULL_PWR_CYCLE_IN_SUSPEND;
 	}
 
 	/*
