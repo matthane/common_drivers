@@ -109,7 +109,8 @@ static int am_meson_fbdev_alloc_fb_gem(struct fb_info *info)
 			vaddr = vmap(pages, npages, VM_MAP, pgprot);
 			vfree(pages);
 		} else {
-			vaddr = ion_buffer_kmap_get(meson_gem->ionbuffer);
+			vaddr = ion_heap_map_kernel(meson_gem->ionbuffer->heap,
+						meson_gem->ionbuffer);
 		}
 		info->screen_base = (char __iomem *)vaddr;
 		info->fix.smem_start = meson_gem->addr;
@@ -118,8 +119,6 @@ static int am_meson_fbdev_alloc_fb_gem(struct fb_info *info)
 	} else {
 		struct drm_gem_object *gem_obj = fbdev->fb_gem;
 		meson_gem = container_of(gem_obj, struct am_meson_gem_object, base);
-		vaddr = ion_buffer_kmap_get(meson_gem->ionbuffer);
-		info->screen_base = (char __iomem *)vaddr;
 		get_dma_buf(meson_gem->dmabuf);
 		MESON_DRM_FBDEV("no need repeate alloc memory %d\n", (u32)size);
 	}
@@ -145,10 +144,9 @@ static void am_meson_fbdev_free_fb_gem(struct fb_info *info)
 					struct am_meson_gem_object, base);
 
 		dma_buf_put(meson_gem->dmabuf);
-		ion_buffer_kmap_put(meson_gem->ionbuffer);
-
-		if (meson_gem->ionbuffer->kmap_cnt)
-			return;
+		if (!meson_gem->is_dma)
+			ion_heap_unmap_kernel(meson_gem->ionbuffer->heap,
+					meson_gem->ionbuffer);
 
 		info->screen_base = NULL;
 
@@ -186,7 +184,7 @@ static int am_meson_fbdev_open(struct fb_info *info, int arg)
 
 static int am_meson_fbdev_release(struct fb_info *info, int arg)
 {
-	am_meson_fbdev_free_fb_gem(info);
+	MESON_DRM_FBDEV("may no need to release memory\n");
 	return 0;
 }
 

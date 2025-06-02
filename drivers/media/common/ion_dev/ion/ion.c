@@ -180,7 +180,7 @@ static void _ion_buffer_destroy(struct ion_buffer *buffer)
 		ion_buffer_destroy(buffer);
 }
 
-void *ion_buffer_kmap_get(struct ion_buffer *buffer)
+static void *ion_buffer_kmap_get(struct ion_buffer *buffer)
 {
 	void *vaddr;
 
@@ -199,7 +199,7 @@ void *ion_buffer_kmap_get(struct ion_buffer *buffer)
 	return vaddr;
 }
 
-void ion_buffer_kmap_put(struct ion_buffer *buffer)
+static void ion_buffer_kmap_put(struct ion_buffer *buffer)
 {
 	if (buffer->kmap_cnt > 0) {
 		buffer->kmap_cnt--;
