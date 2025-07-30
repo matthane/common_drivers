@@ -149,6 +149,11 @@
 	pinctrl-0 = <&spdif_out_a_h4_pins>;
 };
 
+&tdmc {
+	/delete-property/ pinctrl-names;
+	/delete-property/ pinctrl-0;
+};
+
 &periphs_pinctrl {
 	/delete-node/ spdifin;
 	/delete-node/ spdifin_a_mute;

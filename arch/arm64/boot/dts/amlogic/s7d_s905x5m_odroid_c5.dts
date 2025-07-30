@@ -61,11 +61,6 @@
   };
 };
 
-&tdmc {
-		/delete-property/ pinctrl-names;
-		/delete-property/ pinctrl-0;
-};
-
 &periphs_pinctrl {
 	pwm_a_gpio_x6: pwm_a_gpio_x6 {
 		mux {
