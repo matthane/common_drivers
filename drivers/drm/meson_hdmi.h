@@ -98,6 +98,7 @@ struct am_hdmi_tx {
 	 * 1:edid is valid
 	 */
 	struct drm_property *edid_valid_prop;
+	struct drm_property *edid_raw_prop;
 	/*
 	 * HWC enable hdcp flow
 	 * 0: IVCX chip don't need: T7/S5/S6/S7/S7D/S1A
