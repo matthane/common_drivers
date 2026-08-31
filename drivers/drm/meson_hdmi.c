@@ -295,6 +295,8 @@ static int meson_hdmitx_decide_color_attr
 	enum hdmi_vic vic;
 	char* colour_sampling[] = {"RGB","YUV422","YUV444","YUV420"};
 	struct hdmitx_color_attr fmt_attr = {};
+	bool dv_active;
+	int ll_policy;
 
 	if (!outputmode) {
 		DRM_ERROR("%s current mode empty.\n", __func__);
@@ -306,6 +308,12 @@ static int meson_hdmitx_decide_color_attr
 		DRM_ERROR("invalid vic for %s\n", outputmode);
 		return -EINVAL;
 	}
+
+	/* the dv enable path writes the policy from another thread, the
+	 * colorspace and the depth must decide on the same value
+	 */
+	dv_active = is_amdv_enable();
+	ll_policy = get_amdv_ll_policy();
 
 	// set default
 	comm_state.state_sequence_id = sequence_id;
@@ -319,9 +327,9 @@ static int meson_hdmitx_decide_color_attr
 	// try autoselect
 	// check if any colour subsampling is set
 	// force colour subsampling when DV mode
-	if (is_amdv_enable()) {
+	if (dv_active) {
 		int cs = attr->colorformat;
-		if (get_amdv_ll_policy() == 0 /* DOLBY_VISION_LL_DISABLE */) {
+		if (ll_policy == 0 /* DOLBY_VISION_LL_DISABLE */) {
 			attr->colorformat = HDMI_COLORSPACE_YUV444;
 		} else {
 			attr->colorformat = HDMI_COLORSPACE_YUV422;
@@ -362,9 +370,9 @@ static int meson_hdmitx_decide_color_attr
 
 	// check for bit colourdepth limit
 	// force bit colourdepth when DV mode
-	if (is_amdv_enable()) {
+	if (dv_active) {
 		int cd = bitdepth_to_colordepth(attr->bitdepth);
-		if (get_amdv_ll_policy() == 0 /* DOLBY_VISION_LL_DISABLE */) {
+		if (ll_policy == 0 /* DOLBY_VISION_LL_DISABLE */) {
 			attr->bitdepth = colordepth_to_bitdepth(COLORDEPTH_24B);
 		} else {
 			attr->bitdepth = colordepth_to_bitdepth(COLORDEPTH_36B);
