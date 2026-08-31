@@ -286,6 +286,112 @@ static bool meson_hdmitx_test_color_attr(struct hdmitx_common *common,
 		return true;
 }
 
+static bool meson_hdmitx_attr_carriable(struct hdmitx_common *common,
+	struct am_meson_crtc_state *crtc_state,
+	struct hdmitx_color_attr *test_attr, u64 sequence_id)
+{
+	struct hdmitx_common_state comm_state;
+	char *outputmode = crtc_state->base.adjusted_mode.name;
+	char attr_str[HDMITX_ATTR_LEN_MAX];
+
+	/* validate_mode misses the frame packing clock doubling, 422 is
+	 * depth neutral
+	 */
+	if (common->flag_3dfp && test_attr->bitdepth > 8 &&
+		test_attr->colorformat != HDMI_COLORSPACE_YUV422)
+		return false;
+
+	memset(&comm_state, 0, sizeof(comm_state));
+	comm_state.state_sequence_id = sequence_id;
+	build_hdmitx_attr_str(attr_str, test_attr->colorformat, test_attr->bitdepth);
+
+	return hdmitx_common_validate_mode_locked(common, &comm_state, outputmode,
+			attr_str, false, true) == 0;
+}
+
+static bool meson_hdmitx_sink_has_bitdepth(struct hdmitx_common *common,
+	struct hdmitx_color_attr *test_attr)
+{
+	enum hdmi_color_depth cd = bitdepth_to_colordepth(test_attr->bitdepth);
+
+	if (cd == COLORDEPTH_24B)
+		return true;
+
+	if (test_attr->colorformat == HDMI_COLORSPACE_YUV420)
+		return cd == COLORDEPTH_30B &&
+			common->rxcap.hf_ieeeoui == HF_IEEEOUI &&
+			common->rxcap.dc_30bit_420;
+
+	/* 422 is always 12bit packing, the deep color bits do not apply */
+	if (test_attr->colorformat == HDMI_COLORSPACE_YUV422)
+		return true;
+
+	return common->rxcap.ColorDeepSupport & (1 << (cd - 1));
+}
+
+static bool meson_hdmitx_fit_bitdepth(struct hdmitx_common *common,
+	struct am_meson_crtc_state *crtc_state, struct hdmitx_color_attr *test_attr,
+	int max_bitdepth, u64 sequence_id)
+{
+	static const int bitdepths[] = {12, 10, 8};
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(bitdepths); i++) {
+		if (bitdepths[i] > max_bitdepth)
+			continue;
+		test_attr->bitdepth = bitdepths[i];
+		if (!meson_hdmitx_sink_has_bitdepth(common, test_attr))
+			continue;
+		if (meson_hdmitx_attr_carriable(common, crtc_state, test_attr, sequence_id))
+			return true;
+	}
+
+	return false;
+}
+
+/* only 4:2:0 halves the tmds clock, 4:2:2 costs the same as 4:4:4 8bit, so
+ * give up the depth before the colorspace
+ */
+static void meson_hdmitx_degrade_forced_attr(struct hdmitx_common *common,
+	struct am_meson_crtc_state *crtc_state, struct hdmitx_color_attr *attr,
+	enum hdmi_vic vic, u64 sequence_id)
+{
+	char *outputmode = crtc_state->base.adjusted_mode.name;
+	char* colour_sampling[] = {"RGB","YUV422","YUV444","YUV420"};
+	struct hdmitx_color_attr alt = *attr;
+	bool fit;
+
+	if (meson_hdmitx_sink_has_bitdepth(common, attr) &&
+		meson_hdmitx_attr_carriable(common, crtc_state, attr, sequence_id))
+		return;
+
+	fit = meson_hdmitx_fit_bitdepth(common, crtc_state, &alt,
+			attr->bitdepth - 1, sequence_id);
+	if (!fit && attr->colorformat != HDMI_COLORSPACE_YUV420 &&
+		is_hdmi4k_support_420(vic & 0xff)) {
+		DRM_INFO("[%s]: no %s colourdepth carries %s, dropping to 4:2:0\n", __func__,
+			colour_sampling[attr->colorformat], outputmode);
+
+		alt.colorformat = HDMI_COLORSPACE_YUV420;
+		fit = meson_hdmitx_fit_bitdepth(common, crtc_state, &alt,
+				attr->bitdepth, sequence_id);
+	}
+
+	if (!fit) {
+		DRM_ERROR("[%s]: %s cannot carry any attr near %s,%dbit, vic %d\n", __func__,
+			outputmode, colour_sampling[attr->colorformat],
+			attr->bitdepth, vic);
+		return;
+	}
+
+	DRM_INFO("[%s]: forced attr %s,%dbit is not carriable on %s, using %s,%dbit\n", __func__,
+		colour_sampling[attr->colorformat], attr->bitdepth, outputmode,
+		colour_sampling[alt.colorformat], alt.bitdepth);
+
+	attr->colorformat = alt.colorformat;
+	attr->bitdepth = alt.bitdepth;
+}
+
 static int meson_hdmitx_decide_color_attr
 	(struct hdmitx_common *common, struct am_meson_crtc_state *crtc_state,
 	struct hdmitx_color_attr *attr, u64 sequence_id)
@@ -294,7 +400,7 @@ static int meson_hdmitx_decide_color_attr
 	char *outputmode = crtc_state->base.adjusted_mode.name;
 	enum hdmi_vic vic;
 	char* colour_sampling[] = {"RGB","YUV422","YUV444","YUV420"};
-	struct hdmitx_color_attr fmt_attr = {};
+	struct hdmitx_color_attr intent = {};
 
 	if (!outputmode) {
 		DRM_ERROR("%s current mode empty.\n", __func__);
@@ -312,9 +418,9 @@ static int meson_hdmitx_decide_color_attr
 	attr->colorformat = HDMI_COLORSPACE_YUV444;
 	attr->bitdepth = 8;
 
-	// read override fmt_attr by boot param hdmitx=
-	hdmitx_parse_color_attr(common->fmt_attr, &fmt_attr.colorformat, &fmt_attr.bitdepth, &fmt_attr.colorrange);
-	fmt_attr.bitdepth = colordepth_to_bitdepth(fmt_attr.bitdepth);
+	// read override attr by boot param hdmitx=
+	hdmitx_parse_color_attr(common->user_attr, &intent.colorformat, &intent.bitdepth, &intent.colorrange);
+	intent.bitdepth = colordepth_to_bitdepth(intent.bitdepth);
 
 	// try autoselect
 	// check if any colour subsampling is set
@@ -330,10 +436,7 @@ static int meson_hdmitx_decide_color_attr
 			DRM_INFO("[%s]: display colour subsampling is forced to %s by Dolby Vision tunneling\n", __func__,
 				colour_sampling[attr->colorformat]);
 	} else {
-		if (strstr(common->fmt_attr, "rgb") == NULL &&
-		    strstr(common->fmt_attr, "420") == NULL &&
-		    strstr(common->fmt_attr, "422") == NULL &&
-		    strstr(common->fmt_attr, "444") == NULL) {
+		if (!common->cs_forced) {
 			if (is_hdmi4k_support_420(vic & 0xff)) {
 				/*
 				* Use YCbCr 4:2:2 when supported by the sink,
@@ -355,8 +458,8 @@ static int meson_hdmitx_decide_color_attr
 		else
 		{
 			DRM_INFO("[%s]: display colour subsampling is forced by attr to %s: %s\n", __func__,
-				colour_sampling[fmt_attr.colorformat], common->fmt_attr);
-				attr->colorformat = fmt_attr.colorformat;
+				colour_sampling[intent.colorformat], common->user_attr);
+				attr->colorformat = intent.colorformat;
 		}
 	}
 
@@ -374,10 +477,10 @@ static int meson_hdmitx_decide_color_attr
 				attr->bitdepth);
 	} else {
 		// check colourdepth
-		if (strstr(common->fmt_attr, "bit") != NULL) {
+		if (common->cd_forced) {
 			DRM_INFO("[%s]: display colourdepth is forced by attr to %d bits: %s\n", __func__,
-				fmt_attr.bitdepth, common->fmt_attr);
-				attr->bitdepth = fmt_attr.bitdepth;
+				intent.bitdepth, common->user_attr);
+				attr->bitdepth = intent.bitdepth;
 		} else {
 			if (common->rxcap.ColorDeepSupport & 0x78 && attr->colorformat != HDMI_COLORSPACE_YUV420) {
 				enum hdmi_color_depth cd;
@@ -410,6 +513,9 @@ static int meson_hdmitx_decide_color_attr
 					attr->bitdepth);
 		}
 	}
+
+	if (!is_amdv_enable() && (common->cs_forced || common->cd_forced))
+		meson_hdmitx_degrade_forced_attr(common, crtc_state, attr, vic, sequence_id);
 
 	DRM_INFO("[%s]:[%s,eotf:%d,vic:%d]=>attr[%s,%dbit]\n", __func__,
 		outputmode, common->hdmi_current_eotf_type, vic,
@@ -1896,7 +2002,12 @@ void meson_hdmitx_encoder_atomic_mode_set(struct drm_encoder *encoder,
 	}
 
 	if (!hdmitx_state->color_force) {
-		if (attr->colorformat != HDMI_COLORSPACE_RESERVED6) {
+		/* a forced attr degrades per mode and cannot be inherited from
+		 * another one, but the uboot init commit must not set update
+		 */
+		if (attr->colorformat != HDMI_COLORSPACE_RESERVED6 &&
+			(meson_crtc_state->uboot_mode_init == 1 ||
+			(!tx_comm->cs_forced && !tx_comm->cd_forced))) {
 			if (meson_hdmitx_test_color_attr(tx_comm, meson_crtc_state,
 				attr, sequence_id)) {
 				update_attr = false;
