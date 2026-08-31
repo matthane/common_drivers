@@ -74,6 +74,12 @@ int hdmitx_common_init(struct hdmitx_common *tx_comm, struct hdmitx_hw_common *h
 	/* memcpy(tx_comm->rxcap.hdmichecksum, boot_param->edid_chksum, */
 		/* sizeof(tx_comm->rxcap.hdmichecksum)); */
 	memcpy(tx_comm->fmt_attr, boot_param->color_attr, sizeof(tx_comm->fmt_attr));
+	memcpy(tx_comm->user_attr, boot_param->color_attr, sizeof(tx_comm->user_attr));
+	tx_comm->cs_forced = strstr(tx_comm->user_attr, "rgb") != NULL ||
+		strstr(tx_comm->user_attr, "420") != NULL ||
+		strstr(tx_comm->user_attr, "422") != NULL ||
+		strstr(tx_comm->user_attr, "444") != NULL;
+	tx_comm->cd_forced = strstr(tx_comm->user_attr, "bit") != NULL;
 
 	tx_comm->frac_rate_policy = boot_param->fraction_refreshrate;
 	tx_comm->config_csc_en = boot_param->config_csc;

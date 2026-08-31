@@ -78,6 +78,12 @@ struct hdmitx_common {
 	struct connector_hpd_cb drm_hpd_cb;/*drm hpd notify*/
 
 	char fmt_attr[16];
+	/* hdmitx= cmdline intent, fmt_attr is the applied format and its per
+	 * modeset rebuild is only short circuited today. written once at init
+	 */
+	char user_attr[16];
+	bool cs_forced;
+	bool cd_forced;
 	/* for pxp test */
 	char tst_fmt_attr[16];
 
