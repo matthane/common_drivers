@@ -164,6 +164,7 @@ int am_meson_hdmi_get_vrr_range(struct drm_device *dev,
 void set_amdv_policy(int policy);
 int get_amdv_policy(void);
 void set_amdv_ll_policy(int policy);
+int get_amdv_ll_policy(void);
 void amdv_debug_store(char *buf);
 void set_amdv_enable(bool enable);
 int get_dv_support_info(void);

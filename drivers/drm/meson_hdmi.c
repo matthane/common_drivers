@@ -552,6 +552,8 @@ int meson_hdmitx_get_modes(struct drm_connector *connector)
 	int *vrr_list;
 	int *tmp;
 	int num_group = 0;
+	u8 *edid_raw_buf = NULL;
+	int edid_raw_len;
 
 	if (!am_hdmitx) {
 		DRM_ERROR("am_hdmitx is NULL!\n");
@@ -563,6 +565,14 @@ int meson_hdmitx_get_modes(struct drm_connector *connector)
 	am_hdmitx->sequence_id = hdmitx_get_hpd_hw_sequence_id(tx_comm);
 
 	drm_connector_update_edid_property(connector, edid);
+
+	edid_raw_len = hdmitx_common_read_edid(&edid_raw_buf);
+	if (drm_property_replace_global_blob(connector->dev, &am_hdmitx->edid_raw_blob,
+					     edid_raw_len > 0 ? edid_raw_len : 0,
+					     edid_raw_buf, &connector->base,
+					     am_hdmitx->edid_raw_prop))
+		DRM_ERROR("Failed to update edid_raw property\n");
+	kfree(edid_raw_buf);
 
 	vrr_list = kcalloc(MAX_VRR_GROUP_VIC_NUM, sizeof(int),  GFP_KERNEL);
 	tmp = kcalloc(MAX_VRR_GROUP_VIC_NUM, sizeof(int),  GFP_KERNEL);
@@ -1029,29 +1039,6 @@ static int am_hdmitx_connector_atomic_get_property
 	} else if (property == am_hdmi->edid_valid_prop) {
 		*val = hdmitx_common_get_edid_valid_state(tx_comm);
 		return 0;
-	} else if (property == am_hdmi->edid_raw_prop) {
-		u8 *buf = NULL;
-		int len = hdmitx_common_read_edid(&buf);
-
-		if (len <= 0 || !buf) {
-			*val = 0;
-			return 0;
-		}
-
-		/* Create a DRM blob for EDID */
-		struct drm_device *dev = connector->dev;
-		struct drm_property_blob *blob =
-		drm_property_create_blob(dev, len, buf);
-
-		kfree(buf);
-
-		if (!blob) {
-			*val = 0;
-			return 0;
-		}
-
-		*val = blob->base.id;
-		return 0;
 	} else if (property == am_hdmi->hdcp_user_prop) {
 		*val = hdmitx_common_get_hdcp_user_state(tx_comm);
 		return 0;
@@ -1138,8 +1125,11 @@ static int am_hdmitx_connector_late_register(struct drm_connector *connector)
 
 static void am_hdmitx_connector_destroy(struct drm_connector *connector)
 {
+	struct am_hdmi_tx *am_hdmitx = connector_to_am_hdmi(connector);
+
 	drm_connector_unregister(connector);
 	drm_connector_cleanup(connector);
+	drm_property_blob_put(am_hdmitx->edid_raw_blob);
 }
 
 int meson_hdmitx_atomic_check(struct drm_connector *connector,
@@ -2513,7 +2503,9 @@ static void meson_hdmitx_init_edid_raw_property(struct drm_device *drm_dev,
 {
 	struct drm_property *prop;
 
-	prop = drm_property_create(drm_dev, DRM_MODE_PROP_BLOB, "edid_raw", 0);
+	prop = drm_property_create(drm_dev,
+				   DRM_MODE_PROP_BLOB | DRM_MODE_PROP_IMMUTABLE,
+				   "edid_raw", 0);
 	if (prop) {
 		am_hdmi->edid_raw_prop = prop;
 		drm_object_attach_property(&am_hdmi->base.connector.base, prop, 0);
