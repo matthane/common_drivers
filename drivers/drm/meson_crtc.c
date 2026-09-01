@@ -353,7 +353,7 @@ static int meson_crtc_atomic_get_property(struct drm_crtc *crtc,
 		*val = crtc_state->crtc_bgcolor;
 		return 0;
 	} else if (property == meson_crtc->dv_mode_property) {
-		*val = crtc_state->dv_mode;
+		*val = get_amdv_mode();
 		return 0;
 	} else if (property == meson_crtc->dv_policy_property) {
 		*val = get_amdv_policy();
