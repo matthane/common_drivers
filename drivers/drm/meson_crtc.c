@@ -332,6 +332,9 @@ static int meson_crtc_atomic_get_property(struct drm_crtc *crtc,
 	struct am_meson_crtc *meson_crtc = to_am_meson_crtc(crtc);
 	int ret = 0;
 
+	/* default for properties with no get branch below, avoids returning stack garbage */
+	*val = 0;
+
 	crtc_state->hdr_conversion_ctrl = get_hdr_cur_output();
 
 	if (!crtc_state->crtc_eotf_by_property_flag)
@@ -354,6 +357,12 @@ static int meson_crtc_atomic_get_property(struct drm_crtc *crtc,
 		return 0;
 	} else if (property == meson_crtc->dv_policy_property) {
 		*val = get_amdv_policy();
+		return 0;
+	} else if (property == meson_crtc->dv_ll_policy_property) {
+		*val = get_amdv_ll_policy();
+		return 0;
+	} else if (property == meson_crtc->dv_debug_property) {
+		*val = 0;
 		return 0;
 	} else if (property == meson_crtc->dv_status_property) {
 		*val = get_amdv_status();
