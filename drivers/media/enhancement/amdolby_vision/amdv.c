@@ -11405,13 +11405,7 @@ int amdv_wait_metadata_v1(struct vframe_s *vf)
 				amdv_wait_on = true;
 
 				/*dv off->on, delay vfream*/
-				if (dolby_vision_policy ==
-				    AMDV_FOLLOW_SOURCE &&
-				    dolby_vision_mode ==
-				    AMDV_OUTPUT_MODE_BYPASS &&
-				    mode ==
-				    AMDV_OUTPUT_MODE_IPT_TUNNEL &&
-				    amdv_wait_delay > 0 &&
+				if (amdv_wait_delay > 0 &&
 				    !vf_is_fel(vf)) {
 					amdv_wait_count =
 					amdv_wait_delay;
@@ -11436,7 +11430,8 @@ int amdv_wait_metadata_v1(struct vframe_s *vf)
 				vd1_on = true;
 		}
 		/* don't use run mode when sdr -> dv and vd1 not disable */
-		if (/*amdv_wait_init && */vd1_on && is_aml_tvmode() && !force_runmode)
+		if (/*amdv_wait_init && */vd1_on &&
+		    (is_aml_tvmode() || is_amdv_stb_mode()) && !force_runmode)
 			amdv_on_count =
 				amdv_run_mode_delay + 1;
 		if (debug_dolby & 8)
@@ -11576,13 +11571,7 @@ int amdv_wait_metadata_v2(struct vframe_s *vf, enum vd_path_e vd_path)
 				amdv_wait_on = true;
 
 				/*dv off->on, delay vfream*/
-				if (dolby_vision_policy ==
-				    AMDV_FOLLOW_SOURCE &&
-				    dolby_vision_mode ==
-				    AMDV_OUTPUT_MODE_BYPASS &&
-				    mode ==
-				    AMDV_OUTPUT_MODE_IPT_TUNNEL &&
-				    amdv_wait_delay > 0 &&
+				if (amdv_wait_delay > 0 &&
 				    !vf_is_fel(vf)) {
 					dv_inst[dv_id].amdv_wait_count =
 					amdv_wait_delay;
@@ -11617,7 +11606,7 @@ int amdv_wait_metadata_v2(struct vframe_s *vf, enum vd_path_e vd_path)
 		}
 		/* don't use run mode when sdr -> dv and vd1 not disable */
 		if (/*dv_inst[dv_id].amdv_wait_init &&*/ vd_on &&
-			is_aml_tvmode() && !force_runmode)
+		    (is_aml_tvmode() || is_amdv_stb_mode()) && !force_runmode)
 			dv_core1[layer_id].run_mode_count =
 				amdv_run_mode_delay + 1;
 		if (debug_dolby & 8)
