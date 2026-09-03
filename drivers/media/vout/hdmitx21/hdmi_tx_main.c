@@ -855,6 +855,93 @@ static void hdr_work_func(struct work_struct *work)
 	}
 }
 
+/* a 422 VSIF claim must move the wire too; the PLL relock runs deferred
+ * and is re-requested on every 422 send
+ */
+static void hdmitx_wire_flip_schedule(struct hdmitx_dev *hdev, bool to_422)
+{
+	if (!to_422 && !hdev->tx_comm.dv_wire_422)
+		return;
+	hdev->tx_comm.dv_wire_422 = to_422;
+	schedule_work(&hdev->work_wire_flip);
+}
+
+/* P2T_CTRL_IVCTX: [1:0] packing bpp, [7] deep color */
+static bool is_wire_p2t(u8 depth_bits, bool deep_color)
+{
+	u32 p2t = hdmitx21_rd_reg(P2T_CTRL_IVCTX);
+
+	return (p2t & 0x3) == depth_bits &&
+	       ((p2t & BIT(7)) == (deep_color ? BIT(7) : 0));
+}
+
+static void wire_target_packing(bool to_422,
+	struct hdmi_format_para *para, u8 *depth_bits, bool *deep)
+{
+	u8 dp;
+
+	if (to_422) {
+		*depth_bits = 0;
+		*deep = false;
+		return;
+	}
+	dp = (para->cs == HDMI_COLORSPACE_YUV422) ?
+		COLORDEPTH_24B : para->cd;
+	*depth_bits = dp & 0x3;
+	*deep = dp != COLORDEPTH_24B;
+}
+
+static void wire_flip_work_func(struct work_struct *work)
+{
+	struct hdmitx_dev *hdev =
+		container_of(work, struct hdmitx_dev, work_wire_flip);
+	struct hdmi_format_para *para = &hdev->tx_comm.fmt_para;
+	struct hdmi_format_para keep;
+	unsigned long flags = 0;
+	bool to_422 = hdev->tx_comm.dv_wire_422;
+	u8 depth_bits;
+	bool deep;
+
+	wire_target_packing(to_422, para, &depth_bits, &deep);
+	if (is_wire_p2t(depth_bits, deep))
+		return;
+
+	mutex_lock(&hdev->tx_comm.hdmimode_mutex);
+	if (!hdev->tx_comm.ready || !hdev->tx_comm.hpd_state)
+		goto out;
+	to_422 = hdev->tx_comm.dv_wire_422;
+	wire_target_packing(to_422, para, &depth_bits, &deep);
+	if (is_wire_p2t(depth_bits, deep))
+		goto out;
+
+	memcpy(&keep, para, sizeof(keep));
+	if (to_422) {
+		/* LL derives 12-bit input; config clamps the Y422 wire to 24-bit */
+		para->cs = HDMI_COLORSPACE_YUV422;
+		para->cd = COLORDEPTH_36B;
+	}
+	para->tmds_clk = hdmitx_calc_tmds_clk(para->timing.pixel_freq,
+		para->cs, para->cd);
+	para->scrambler_en = para->tmds_clk > 340000;
+	para->tmds_clk_div40 = para->scrambler_en;
+	HDMITX_INFO("wire flip: %s, depth bits %u, deep %d\n",
+		to_422 ? "to 422 transport" : "to fmt_para attr",
+		depth_bits, deep);
+	hdmitx_hw_cntl_config(&hdev->tx_hw.base, CONF_VIDEO_MUTE_OP, VIDEO_MUTE);
+	hdev->tx_hw.base.setdispmode(&hdev->tx_hw.base);
+	hdmitx_hw_cntl_config(&hdev->tx_hw.base, CONF_VIDEO_MUTE_OP, VIDEO_UNMUTE);
+	memcpy(para, &keep, sizeof(keep));
+	hdmitx21_set_uevent(HDMITX_VMODE_AUDIO_EVENT, 1);
+	if (!to_422) {
+		/* the DV exit latch may have caught the temp 422: relatch the attr */
+		spin_lock_irqsave(&hdev->tx_comm.edid_spinlock, flags);
+		hdmi_avi_infoframe_config(CONF_AVI_CS, keep.cs);
+		spin_unlock_irqrestore(&hdev->tx_comm.edid_spinlock, flags);
+	}
+out:
+	mutex_unlock(&hdev->tx_comm.hdmimode_mutex);
+}
+
 #define GET_LOW8BIT(a)	((a) & 0xff)
 #define GET_HIGH8BIT(a)	(((a) >> 8) & 0xff)
 static struct master_display_info_s drm_config_data;
@@ -952,6 +1039,7 @@ static void hdmitx_set_drm_pkt(struct master_display_info_s *data)
 	/* if VSIF/DV or VSIF/HDR10P packet is enabled, disable it */
 	if (hdmitx_dv_en(&hdev->tx_hw.base)) {
 		hdmi_avi_infoframe_config(CONF_AVI_CS, hdev->tx_comm.fmt_para.cs);
+		hdmitx_wire_flip_schedule(hdev, false);
 	/* if using VSIF/DOVI, then only clear DV_VS10_SIG, else disable VSIF */
 		if (hdmitx_hw_cntl_config(&hdev->tx_hw.base, CONF_CLR_DV_VS10_SIG, 0) == 0)
 			/* hdmi_vend_infoframe_set(NULL); */
@@ -1244,9 +1332,17 @@ static void hdmitx_set_vsif_pkt(enum eotf_type type,
 	if (hdev->tx_comm.ready == 0 && type != EOTF_T_NULL) {
 		ltype = EOTF_T_NULL;
 		ltmode = -1;
+		hdev->tx_comm.dv_wire_422 = false;
 		spin_unlock_irqrestore(&hdev->tx_comm.edid_spinlock, flags);
 		return;
 	}
+	/* any non-422 claim releases a flipped wire */
+	if (hdev->tx_comm.dv_wire_422 &&
+	    (!(type == EOTF_T_DOLBYVISION || type == EOTF_T_LL_MODE) ||
+	     tunnel_mode == RGB_8BIT || tunnel_mode == RGB_10_12BIT ||
+	     tunnel_mode == YUV444_10_12BIT))
+		hdmitx_wire_flip_schedule(hdev, false);
+
 	if (hdev->tx_comm.rxcap.dv_info.ieeeoui != DV_IEEE_OUI) {
 		if (type == 0 && !data && signal_sdr)
 			HDMITX_INFO("TV not support DV, clr dv_vsif\n");
@@ -1351,6 +1447,7 @@ static void hdmitx_set_vsif_pkt(enum eotf_type type,
 				hdmi_avi_infoframe_config(CONF_AVI_YQ01, YCC_RANGE_FUL);
 				hdmitx_tracer_write_event(hdev->tx_comm.tx_tracer,
 							HDMITX_HDR_MODE_DV_LL);
+				hdmitx_wire_flip_schedule(hdev, true);
 			}
 		} else {
 			if (hdmi_vic_4k_flag)
@@ -1463,6 +1560,7 @@ static void hdmitx_set_vsif_pkt(enum eotf_type type,
 				hdmi_avi_infoframe_config(CONF_AVI_YQ01, YCC_RANGE_FUL);
 				hdmitx_tracer_write_event(hdev->tx_comm.tx_tracer,
 							HDMITX_HDR_MODE_DV_LL);
+				hdmitx_wire_flip_schedule(hdev, true);
 			}
 			if (hdmi_vic_4k_flag)
 				hdmi_avi_infoframe_config(CONF_AVI_VIC, vic & 0xff);
@@ -1499,6 +1597,7 @@ static void hdmitx_set_vsif_pkt(enum eotf_type type,
 				/* YUV422 */
 				hdmi_avi_infoframe_config(CONF_AVI_CS, HDMI_COLORSPACE_YUV422);
 				hdmi_avi_infoframe_config(CONF_AVI_YQ01, YCC_RANGE_LIM);
+				hdmitx_wire_flip_schedule(hdev, true);
 			}
 			/* save vic to AVI when send DV_VSIF */
 			if (hdmi_vic_4k_flag)
@@ -4981,6 +5080,7 @@ static int amhdmitx_probe(struct platform_device *pdev)
 	spin_lock_init(&hdev->tx_comm.edid_spinlock);
 	INIT_WORK(&hdev->work_hdr, hdr_work_func);
 	INIT_WORK(&hdev->work_hdr_unmute, hdr_unmute_work_func);
+	INIT_WORK(&hdev->work_wire_flip, wire_flip_work_func);
 	hdev->hdmi_hpd_wq = alloc_ordered_workqueue(DEVICE_NAME,
 		WQ_HIGHPRI | __WQ_LEGACY | WQ_MEM_RECLAIM);
 	INIT_DELAYED_WORK(&hdev->work_hpd_plugin, hdmitx_hpd_plugin_irq_handler);
@@ -5103,6 +5203,7 @@ static int amhdmitx_remove(struct platform_device *pdev)
 
 	cancel_work_sync(&hdev->work_hdr);
 	cancel_work_sync(&hdev->work_hdr_unmute);
+	cancel_work_sync(&hdev->work_wire_flip);
 	hdmitx21_hdcp_exit();
 	cancel_delayed_work(&hdev->work_internal_intr);
 	destroy_workqueue(hdev->hdmi_intr_wq);
