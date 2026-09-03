@@ -87,6 +87,7 @@ struct hdmitx_dev {
 	struct delayed_work work_internal_intr;
 	struct work_struct work_hdr;
 	struct work_struct work_hdr_unmute;
+	struct work_struct work_wire_flip;
 	struct delayed_work work_do_hdcp;
 	int hdmi_init;
 
