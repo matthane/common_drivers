@@ -186,6 +186,8 @@ struct hdmitx_common {
 	u32 output_color_format;
 	bool csc_config_in_next_frame;
 	u8 csc_delay_frame;
+	/* set while the wire runs the DV Y422 transport; voided on mode set */
+	bool dv_wire_422;
 
 	/***** ced/rxsense related *****/
 	bool cedst_en;

@@ -191,6 +191,7 @@ static int hdmitx_common_pre_enable_mode(struct hdmitx_common *tx_comm,
 
 	/*TODO: keep for hw module to read formatpara, remove later.*/
 	memcpy(&tx_comm->fmt_para, para, sizeof(struct hdmi_format_para));
+	tx_comm->dv_wire_422 = false;
 
 	/*check if vic supported by rx*/
 	if (!hdmitx_edid_validate_mode(&tx_comm->rxcap, tx_comm->fmt_para.vic)) {

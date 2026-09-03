@@ -135,6 +135,7 @@ struct hdmitx_dev {
 	struct delayed_work work_internal_intr;
 	struct work_struct work_hdr;
 	struct work_struct work_hdr_unmute;
+	struct work_struct work_wire_flip;
 	struct delayed_work work_start_hdcp;
 	struct vrr_device_s hdmitx_vrr_dev;
 	void *am_hdcp;
