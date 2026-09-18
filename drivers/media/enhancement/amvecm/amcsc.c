@@ -535,6 +535,11 @@ static uint cur_hdr_policy = 0xff;
 module_param(hdr_policy, uint, 0664);
 MODULE_PARM_DESC(hdr_policy, "\n current hdr_policy\n");
 
+/* 0: normal OSD SDR-to-HDR processing; 1: OSD-only HDR bypass (matrix-only, LUTs off) */
+static uint osd_hdr_bypass;
+module_param(osd_hdr_bypass, uint, 0664);
+MODULE_PARM_DESC(osd_hdr_bypass, "\n osd-only hdr bypass enable\n");
+
 /* 0: source: use src meta */
 /* 1: Auto: 601/709=709 P3/2020=P3 */
 /* 2: Native: 601/709=off P3/2020=2020 */
@@ -670,6 +675,74 @@ void set_hdr_policy(int policy)
 #endif
 }
 EXPORT_SYMBOL(set_hdr_policy);
+
+int get_osd_hdr_bypass(void)
+{
+	return osd_hdr_bypass;
+}
+EXPORT_SYMBOL(get_osd_hdr_bypass);
+
+/* OSD plane whose wrap bank the bypass engages: 1 is the common second
+ * OSD, 2 the S928X wiring where the third OSD is the only overlay.
+ */
+static uint osd_hdr_bypass_idx = 1;
+
+/* Program the WRAP matrix bank of an OSD plane as IDENTITY. The banks:
+ * index 1 = 0x3d70..0x3d7d, index 2 = 0x3db0..0x3dbd, one layout.
+ * The OSD plane carries 8-bit PQ codes; the silicon zero-extends them x16
+ * into the 12-bit HDR2 core input (255 -> 4080, already full scale), so the
+ * wrap must not add gain: a x4 diagonal produced x64 total and clamped
+ * every channel above code 64 to 4095, crushing multi-channel colors to
+ * white. Diag x1: m00=m11=m22=1024, all others 0, no offsets.
+ * m22 goes in the LOW half of the last coefficient register.
+ */
+static void osd_wrap_matrix(int osd_index, int enable)
+{
+	static const unsigned int bank_base[] = { 0x3d70, 0x3db0 };
+	unsigned int base = bank_base[osd_index - 1];
+
+	if (!enable) {
+		VSYNC_WRITE_VPP_REG(base + 13, 0x00000000);
+		return;
+	}
+	VSYNC_WRITE_VPP_REG(base + 0, 0x04000000);
+	VSYNC_WRITE_VPP_REG(base + 1, 0x00000000);
+	VSYNC_WRITE_VPP_REG(base + 2, 0x04000000);
+	VSYNC_WRITE_VPP_REG(base + 3, 0x00000000);
+	VSYNC_WRITE_VPP_REG(base + 4, 0x00000400);
+	VSYNC_WRITE_VPP_REG(base + 8, 0x00000000);
+	VSYNC_WRITE_VPP_REG(base + 9, 0x00000000);
+	VSYNC_WRITE_VPP_REG(base + 10, 0x00000000);
+	VSYNC_WRITE_VPP_REG(base + 11, 0x00000000);
+	VSYNC_WRITE_VPP_REG(base + 12, 0x00000000);
+	VSYNC_WRITE_VPP_REG(base + 13, 0x00000001);
+}
+
+int set_osd_hdr_bypass(int osd_index)
+{
+	if (osd_index < 0 || osd_index > 2) {
+		pr_err("osd_hdr_bypass: invalid osd index %d\n", osd_index);
+		return -EINVAL;
+	}
+	if (osd_index) {
+		osd_hdr_bypass = 1;
+		osd_hdr_bypass_idx = osd_index;
+		osd_wrap_matrix(osd_index, 1);
+	} else {
+		osd_hdr_bypass = 0;
+		osd_wrap_matrix(osd_hdr_bypass_idx, 0);
+	}
+	return 0;
+}
+EXPORT_SYMBOL(set_osd_hdr_bypass);
+
+/* Re-apply the current engage: HDR2 mode passes can rewrite the wrap bank.
+ */
+void osd_hdr_bypass_reapply(void)
+{
+	osd_wrap_matrix(osd_hdr_bypass_idx, osd_hdr_bypass);
+}
+EXPORT_SYMBOL(osd_hdr_bypass_reapply);
 
 void set_cur_hdr_policy(uint policy)
 {

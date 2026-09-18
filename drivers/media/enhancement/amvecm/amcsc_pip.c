@@ -3378,15 +3378,19 @@ void video_post_process(struct vframe_s *vf,
 					hdr_proc(vf, VD2_HDR, HDR_BYPASS, vinfo, NULL, vpp_index);
 				else if (vd_path == VD3_PATH)
 					hdr_proc(vf, VD3_HDR, HDR_BYPASS, vinfo, NULL, vpp_index);
-				if (get_hdr_policy() == 2 &&
-				    target_format[vd_path] == BT_BYPASS) {
+				if (get_osd_hdr_bypass() ||
+				    (get_hdr_policy() == 2 &&
+				    target_format[vd_path] == BT_BYPASS)) {
 					hdr_proc(vf, OSD1_HDR, HDR_BYPASS, vinfo, NULL, vpp_index);
 					hdr_proc(vf, OSD2_HDR, HDR_BYPASS, vinfo, NULL, vpp_index);
 					hdr_proc(vf, OSD3_HDR, HDR_BYPASS, vinfo, NULL, vpp_index);
+					if (get_osd_hdr_bypass())
+						osd_hdr_bypass_reapply();
 				} else {
 					hdr_proc(vf, OSD1_HDR, SDR_HDR, vinfo, NULL, vpp_index);
 					hdr_proc(vf, OSD2_HDR, SDR_HDR, vinfo, NULL, vpp_index);
 					hdr_proc(vf, OSD3_HDR, SDR_HDR, vinfo, NULL, vpp_index);
+					osd_hdr_bypass_reapply();
 				}
 			}
 		} else if (hdr_process_mode[vd_path] == PROC_HDR_TO_SDR) {

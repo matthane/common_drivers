@@ -3749,6 +3749,17 @@ enum hdr_process_sel hdr_func(enum hdr_module_sel module_sel,
 				oft_pre_out = bypass_pre;
 				oft_post_out = bypass_pos;
 			}
+
+			/* Output format can be stale at playback start.
+			 * Bypass OSD is BT.2020.
+			 */
+			if (get_osd_hdr_bypass()) {
+				coeff_in = rgb2ycbcr_ncl2020;
+				oft_pre_in = rgb2yuvpre;
+				oft_post_in = rgb2yuvpos;
+				pr_csc(128, "%s: osd_hdr_bypass -> ncl2020 (module %d)\n",
+					__func__, module_sel);
+			}
 		} else {
 			pr_csc(128, "%s: not RGB_OSD\n", __func__);
 			coeff_in = bypass_coeff;

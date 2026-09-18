@@ -58,7 +58,8 @@ struct am_meson_crtc_state {
 
 	int uboot_mode_init;
 	/*policy update by y property*/
-	u8 crtc_hdr_process_policy; /*follow sink or follow source*/
+	u8 crtc_hdr_process_policy;
+	bool crtc_osd_hdr_bypass; /*osd-only hdr bypass set by property*/
 	/*only used to indicate if dv ll mode output now.*/
 	u8 crtc_eotf_type;
 	/*dv core enabled, control by userspace not driver*/
@@ -101,6 +102,7 @@ struct am_meson_crtc {
 	struct meson_vpu_pipeline *pipeline;
 
 	struct drm_property *hdr_policy;
+	struct drm_property *osd_hdr_bypass_property;
 	struct drm_property *hdmi_eotf;
 	struct drm_property *dv_enable_property;
 	struct drm_property *brr_update_property;

@@ -153,6 +153,7 @@ static struct drm_crtc_state *meson_crtc_duplicate_state(struct drm_crtc *crtc)
 
 	new_state->crtc_hdr_process_policy =
 		cur_state->crtc_hdr_process_policy;
+	new_state->crtc_osd_hdr_bypass = cur_state->crtc_osd_hdr_bypass;
 	new_state->crtc_eotf_type = cur_state->crtc_eotf_type;
 	new_state->crtc_dv_enable = cur_state->crtc_dv_enable;
 	new_state->crtc_hdr_enable = cur_state->crtc_hdr_enable;
@@ -185,6 +186,7 @@ static void meson_crtc_init_hdr_preference
 	(struct am_meson_crtc_state *crtc_state)
 {
 	crtc_state->crtc_hdr_process_policy = get_hdr_policy();
+	crtc_state->crtc_osd_hdr_bypass = get_osd_hdr_bypass();
 #ifdef CONFIG_AMLOGIC_MEDIA_ENHANCEMENT_DOLBYVISION
 	crtc_state->crtc_dv_enable = is_amdv_enable();
 #else
@@ -343,6 +345,9 @@ static int meson_crtc_atomic_get_property(struct drm_crtc *crtc,
 	if (property == meson_crtc->hdr_policy) {
 		*val = crtc_state->crtc_hdr_process_policy;
 		return 0;
+	} else if (property == meson_crtc->osd_hdr_bypass_property) {
+		*val = crtc_state->crtc_osd_hdr_bypass;
+		return 0;
 	} else if (property == meson_crtc->hdmi_eotf) {
 		*val = crtc_state->eotf_type_by_property;
 		return 0;
@@ -405,6 +410,8 @@ static int meson_crtc_atomic_set_property(struct drm_crtc *crtc,
 
 	if (property == meson_crtc->hdr_policy) {
 		crtc_state->crtc_hdr_process_policy = val;
+	} else if (property == meson_crtc->osd_hdr_bypass_property) {
+		crtc_state->crtc_osd_hdr_bypass = val;
 		return 0;
 	} else if (property == meson_crtc->hdmi_eotf) {
 		crtc_state->eotf_type_by_property = val;
@@ -829,6 +836,28 @@ static void am_meson_crtc_atomic_disable(struct drm_crtc *crtc,
 	DRM_DEBUG("%s:out\n", __func__);
 }
 
+/* PQ bypass uses the first non-primary OSD bound to this CRTC. */
+static int meson_crtc_osd_overlay_index(struct am_meson_crtc *meson_crtc)
+{
+	struct meson_drm *priv = meson_crtc->priv;
+	int crtc = meson_crtc->crtc_index;
+	int primary = -1;
+	int j;
+
+	for (j = 0; j < MESON_MAX_OSDS; j++) {
+		if (!meson_crtc->pipeline->osds[j] ||
+		    priv->osd_occupied_index == j ||
+		    (int)priv->of_conf.crtcmask_osd[j] != crtc)
+			continue;
+		if (primary < 0) {
+			primary = j;
+			continue;
+		}
+		return j;
+	}
+	return -1;
+}
+
 static int meson_crtc_atomic_check(struct drm_crtc *crtc,
 	struct drm_atomic_state *atomic_state)
 {
@@ -864,6 +893,13 @@ static int meson_crtc_atomic_check(struct drm_crtc *crtc,
 		mvsps->more_60 = 0;
 
 	new_state = to_am_meson_crtc_state(crtc_state);
+	if (new_state->crtc_osd_hdr_bypass &&
+	    !cur_state->crtc_osd_hdr_bypass &&
+	    meson_crtc_osd_overlay_index(amcrtc) < 0) {
+		DRM_ERROR("crtc %d: no overlay OSD for hdr bypass\n",
+			  amcrtc->crtc_index);
+		return -EINVAL;
+	}
 	/*apply parameters need modeset.*/
 	if (atomic_state->allow_modeset) {
 		/*apply state value not set from property.*/
@@ -990,6 +1026,19 @@ static void am_meson_crtc_atomic_flush(struct drm_crtc *crtc,
 		old_am_crtc_state->crtc_hdr_process_policy) {
 		set_hdr_policy(meson_crtc_state->crtc_hdr_process_policy);
 	}
+	if (meson_crtc_state->crtc_osd_hdr_bypass !=
+		old_am_crtc_state->crtc_osd_hdr_bypass) {
+		int osd_index = 0;
+
+		if (meson_crtc_state->crtc_osd_hdr_bypass) {
+			osd_index = meson_crtc_osd_overlay_index(amcrtc);
+			if (osd_index < 0) {
+				DRM_ERROR("crtc %d: no overlay OSD for hdr bypass\n", crtc_index);
+				osd_index = 0;
+			}
+		}
+		set_osd_hdr_bypass(osd_index);
+	}
 #endif
 	if (meson_crtc_state->crtc_bgcolor !=
 		old_am_crtc_state->crtc_bgcolor) {
@@ -1087,6 +1136,15 @@ static void meson_crtc_init_property(struct drm_device *drm_dev,
 		drm_object_attach_property(&amcrtc->base.base, prop, 0);
 	} else {
 		DRM_ERROR("Failed to UPDATE property\n");
+	}
+
+	prop = drm_property_create_bool(drm_dev, 0,
+		"meson.crtc.osd_hdr_bypass");
+	if (IS_ERR_OR_NULL(prop)) {
+		DRM_ERROR("Failed to create OSD_HDR_BYPASS property\n");
+	} else {
+		drm_object_attach_property(&amcrtc->base.base, prop, 0);
+		amcrtc->osd_hdr_bypass_property = prop;
 	}
 }
 
@@ -1397,4 +1455,3 @@ struct am_meson_crtc *meson_crtc_bind(struct meson_drm *priv, int idx)
 
 	return amcrtc;
 }
-

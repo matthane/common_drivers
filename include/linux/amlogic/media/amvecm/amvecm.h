@@ -518,6 +518,9 @@ int am_meson_ctm_set(u32 index, struct drm_color_ctm *ctm);
 int am_meson_ctm_disable(void);
 
 int get_hdr_cur_output(void);
+int get_osd_hdr_bypass(void);
+int set_osd_hdr_bypass(int osd_index);
+void osd_hdr_bypass_reapply(void);
 int get_hdr_conversion_cap(void);
 void set_hdr_output(int out);
 
