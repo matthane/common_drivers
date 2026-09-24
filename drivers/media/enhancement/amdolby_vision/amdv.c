@@ -8899,19 +8899,18 @@ int amdv_parse_metadata_v1(struct vframe_s *vf,
 				}
 			} else if (vinfo->vout_device->dv_info->ver == 2) {
 				if (vinfo->vout_device->dv_info->tmaxPQ) {
-					/* Target max luminance = 100+50*CV, CV range 0-31 (5-bit field) */
+					/* Target max luminance = 2055+65*CV, CV range 0-31 (5-bit field) */
 					graphic_max =
 					target_lumin_max =
 					(vinfo->vout_device->dv_info->tmaxPQ
-						* 50 + 100);
-					/* Target min luminance = (CV/31)^2, CV range 0-31 (5-bit field) */
+						* 65 + 2055);
+					/* Target min luminance = (CV*20), CV range 0-31 (5-bit field) */
 					/* Cover OLED pannels when Target Min PQ is set to 0 */
 					u16 tminPQ = vinfo->vout_device->dv_info->tminPQ ?
 						vinfo->vout_device->dv_info->tminPQ : 1;
 					graphic_min =
 					amdv_target_min =
-					(tminPQ * tminPQ) *
-					10000 / (31 * 31);
+					(tminPQ * 20);
 				}
 			}
 		} else if (sink_hdr_support(vinfo) & HDR_SUPPORT) {
@@ -10451,19 +10450,18 @@ int amdv_parse_metadata_v2_stb(struct vframe_s *vf,
 				}
 			} else if (vinfo->vout_device->dv_info->ver == 2) {
 				if (vinfo->vout_device->dv_info->tmaxPQ) {
-					/* Target max luminance = 100+50*CV, CV range 0-31 (5-bit field) */
+					/* Target max luminance = 2055+65*CV, CV range 0-31 (5-bit field) */
 					graphic_max =
 					target_lumin_max =
 					(vinfo->vout_device->dv_info->tmaxPQ
-						* 50 + 100);
-					/* Target min luminance = (CV/31)^2, CV range 0-31 (5-bit field) */
+						* 65 + 2055);
+					/* Target min luminance = (CV*20), CV range 0-31 (5-bit field) */
 					/* Cover OLED pannels when Target Min PQ is set to 0 */
 					u16 tminPQ = vinfo->vout_device->dv_info->tminPQ ?
 						vinfo->vout_device->dv_info->tminPQ : 1;
 					graphic_min =
 					amdv_target_min =
-					(tminPQ * tminPQ) *
-					10000 / (31 * 31);
+					(tminPQ * 20);
 				}
 			}
 		} else if (sink_hdr_support(vinfo) & HDR_SUPPORT) {
