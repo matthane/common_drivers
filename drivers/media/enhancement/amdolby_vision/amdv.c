@@ -397,6 +397,10 @@ module_param(amdv_graphic_min, uint, 0664);
 MODULE_PARM_DESC(amdv_graphic_min, "\n amdv_graphic_min\n");
 module_param(amdv_graphic_max, uint, 0664);
 MODULE_PARM_DESC(amdv_graphic_max, "\n amdv_graphic_max\n");
+static unsigned int amdv_graphic_follow_video;
+static unsigned int old_amdv_graphic_follow_video;
+module_param(amdv_graphic_follow_video, uint, 0664);
+MODULE_PARM_DESC(amdv_graphic_follow_video, "\n amdv_graphic_follow_video\n");
 
 static unsigned int dv_HDR10_graphics_max = 300;
 /* declared for PQ graphics under video priority: a band inside every
@@ -1710,6 +1714,18 @@ static int is_graphic_changed(void)
 		if (!is_osd_off[0]) {
 			old_amdv_graphic_max =
 				amdv_graphic_max;
+			ret |= 2;
+			force_set_lut = true;
+		}
+	}
+	if (old_amdv_graphic_follow_video != amdv_graphic_follow_video) {
+		if (debug_dolby & 0x2)
+			pr_dv_dbg("graphic follow video changed %d-%d\n",
+				  old_amdv_graphic_follow_video,
+				  amdv_graphic_follow_video);
+		if (!is_osd_off[0]) {
+			old_amdv_graphic_follow_video =
+				amdv_graphic_follow_video;
 			ret |= 2;
 			force_set_lut = true;
 		}
@@ -10745,6 +10761,7 @@ int amdv_parse_metadata_v2_stb(struct vframe_s *vf,
 	new_m_dovi_setting.set_graphic_min_lum = graphic_min;
 	new_m_dovi_setting.set_graphic_max_lum = graphic_max * 10000;
 	if (pri_mode == V_PRIORITY && !amdv_graphic_max &&
+	    !amdv_graphic_follow_video &&
 	    !(dolby_vision_flags & FLAG_CERTIFICATION) &&
 	    (new_m_dovi_setting.input[IPCORE2_ID].src_format == FORMAT_HDR10 ||
 	     new_m_dovi_setting.input[IPCORE2_ID].src_format == FORMAT_HDR8)) {
