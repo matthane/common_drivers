@@ -399,6 +399,11 @@ module_param(amdv_graphic_max, uint, 0664);
 MODULE_PARM_DESC(amdv_graphic_max, "\n amdv_graphic_max\n");
 
 static unsigned int dv_HDR10_graphics_max = 300;
+/* declared for PQ graphics under video priority: a band inside every
+ * v1/v2 VSVDB target range, not the content range
+ */
+#define DV_PQ_GRAPHIC_MIN_LUM	20000	/* 0.0001 nits */
+#define DV_PQ_GRAPHIC_MAX_LUM	30000	/* 0.0001 nits */
 static unsigned int dv_graphic_blend_test;
 module_param(dv_graphic_blend_test, uint, 0664);
 MODULE_PARM_DESC(dv_graphic_blend_test, "\n dv_graphic_blend_test\n");
@@ -10739,6 +10744,13 @@ int amdv_parse_metadata_v2_stb(struct vframe_s *vf,
 
 	new_m_dovi_setting.set_graphic_min_lum = graphic_min;
 	new_m_dovi_setting.set_graphic_max_lum = graphic_max * 10000;
+	if (pri_mode == V_PRIORITY && !amdv_graphic_max &&
+	    !(dolby_vision_flags & FLAG_CERTIFICATION) &&
+	    (new_m_dovi_setting.input[IPCORE2_ID].src_format == FORMAT_HDR10 ||
+	     new_m_dovi_setting.input[IPCORE2_ID].src_format == FORMAT_HDR8)) {
+		new_m_dovi_setting.set_graphic_min_lum = DV_PQ_GRAPHIC_MIN_LUM;
+		new_m_dovi_setting.set_graphic_max_lum = DV_PQ_GRAPHIC_MAX_LUM;
+	}
 	new_m_dovi_setting.set_target_min_lum = amdv_target_min;
 	if (vd_path == VD1_PATH || !vf) {//only update for vd1
 		if (src_format < 0  || src_format >= ARRAY_SIZE(amdv_target_max))
