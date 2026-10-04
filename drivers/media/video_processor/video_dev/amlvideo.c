@@ -40,6 +40,9 @@
 #include <linux/amlogic/media/frame_sync/tsync.h>
 #include "../utils/vfp.h"
 #include "amlvideo.h"
+#ifdef CONFIG_AMLOGIC_MEDIA_ENHANCEMENT_DOLBYVISION
+#include <linux/amlogic/media/amdolbyvision/dolby_vision.h>
+#endif
 
 #define AVMLVIDEO_MODULE_NAME "amlvideo"
 #define KERNEL_ATRACE_TAG KERNEL_ATRACE_TAG_AMLVIDEO
@@ -532,6 +535,18 @@ static int vidioc_querybuf(struct file *file, void *priv, struct v4l2_buffer *p)
 	return videobuf_querybuf(&fh->vb_vidq, p);
 }
 
+/* later dv frames may reuse this frame's metadata, so amvideo must parse it */
+static bool amlvideo_defer_dv_drop(struct vivi_dev *dev, struct vframe_s *vf)
+{
+#ifdef CONFIG_AMLOGIC_MEDIA_ENHANCEMENT_DOLBYVISION
+	if (dev->inst == 0 && is_amdv_enable() && is_amdv_frame(vf)) {
+		vf->type_ext |= VIDTYPE_EXT_DV_DROP;
+		return true;
+	}
+#endif
+	return false;
+}
+
 static int vidioc_qbuf(struct file *file, void *priv, struct v4l2_buffer *p)
 {
 	u32 index;
@@ -541,7 +556,7 @@ static int vidioc_qbuf(struct file *file, void *priv, struct v4l2_buffer *p)
 	while ((vf = vfq_pop(&dev->q_omx)))
 	{
 		index = (u32)vf->pts_us64;
-		if ((p->flags & V4L2_BUF_FLAG_DONE))
+		if ((p->flags & V4L2_BUF_FLAG_DONE) && !amlvideo_defer_dv_drop(dev, vf))
 		{
 			vf_put(vf, dev->vf_receiver_name);
 			vf_notify_provider(dev->vf_receiver_name,
@@ -592,6 +607,7 @@ static int vidioc_dqbuf(struct file *file, void *priv, struct v4l2_buffer *p)
 	}
 
 	dev->vf->frame_index = dev->frame_num;
+	dev->vf->type_ext &= ~VIDTYPE_EXT_DV_DROP;
 	if (dev->vf->type & VIDTYPE_V4L_EOS) {
 		ret = -EAGAIN;
 		goto dqbuf_done;
