@@ -3841,6 +3841,14 @@ struct vframe_s *amvideo_toggle_frame(s32 *vd_path_id)
 	video_get_vf_cnt[0] = 0;
 
 	while (vf && !video_suspend) {
+#ifdef CONFIG_AMLOGIC_MEDIA_ENHANCEMENT_DOLBYVISION
+		if (vf->type_ext & VIDTYPE_EXT_DV_DROP) {
+			if (dolby_vision_drop_frame() == 1)
+				break;
+			vf = amvideo_vf_peek();
+			continue;
+		}
+#endif
 		if (debug_flag & DEBUG_FLAG_OMX_DEBUG_DROP_FRAME) {
 			pr_info("next pts= %d,index %d,pcr = %d,vpts = %d\n",
 				vf->pts, vf->frame_index,
