@@ -192,6 +192,12 @@
 	wifi_static_buf = <1>;
 };
 
+&vdin1 {
+	compatible = "amlogic, vdin-g12a";
+	status = "okay";
+	v4l_support_en;
+};
+
 &dwc2_a {
 	controller-type = <3>;
 };

@@ -258,6 +258,10 @@
 	wifi_static_buf = <1>;
 };
 
+&vdin1 {
+	v4l_support_en;
+};
+
 &i2c0 {
 	status = "disabled";
 };
