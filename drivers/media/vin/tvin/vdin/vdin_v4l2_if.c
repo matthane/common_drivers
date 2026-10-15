@@ -660,8 +660,6 @@ static int vdin_vidioc_streamon(struct file *file, void *priv,
 		return -EFAULT;
 
 	ret = vb2_ioctl_streamon(file, priv, i);
-	vdin_v4l2_start_tvin(devp);
-	memset(&devp->vdin_v4l2.stats, 0, sizeof(devp->vdin_v4l2.stats));
 	dprintk(2, "%s\n", __func__);
 	return 0;
 }
@@ -679,10 +677,6 @@ static int vdin_vidioc_streamoff(struct file *file, void *priv,
 	ret = vb2_ioctl_streamoff(file, priv, i);
 	if (ret < 0)
 		dprintk(0, "%s vb2_ioctl_streamoff failed with %d\n", __func__, ret);
-
-	ret |= vdin_v4l2_stop_tvin(devp);
-	if (ret < 0)
-		dprintk(0, "%s vdin_v4l2_stop_tvin failed with %d\n", __func__, ret);
 
 	return ret;
 }
@@ -1466,9 +1460,12 @@ static int vdin_v4l2_open(struct file *file)
 
 	dprintk(0, "%s\n", __func__);
 	/*dump_stack();*/
-	devp->afbce_flag_backup = devp->afbce_flag;
 
+	mutex_lock(&devp->lock);
 	v4l2_fh_open(file);
+	if (v4l2_fh_is_singular_file(file))
+		devp->afbce_flag_backup = devp->afbce_flag;
+	mutex_unlock(&devp->lock);
 
 	INIT_LIST_HEAD(&devp->buf_list);
 
@@ -1481,21 +1478,21 @@ static int vdin_v4l2_release(struct file *file)
 	int plane_idx = 0;
 	struct vdin_dev_s *devp = video_drvdata(file);
 	struct vdin_set_canvas_addr_s *p_addr = NULL;
+	bool owner, last;
 
 	dprintk(0, "%s\n", __func__);
 
 	if (IS_ERR_OR_NULL(devp))
 		return -EFAULT;
 
-	if (devp->flags & VDIN_FLAG_DEC_STARTED) {
-		dprintk(0, "%s error VDIN_FLAG_DEC_STARTED\n", __func__);
-		return -EPERM;
-	}
+	mutex_lock(&devp->lock);
+	owner = devp->vb_queue.owner == file->private_data;
+	last = v4l2_fh_is_singular_file(file);
 
 	/*release que*/
-	ret = vb2_fop_release(file);
+	ret = _vb2_fop_release(file, NULL);
 
-	if (devp->work_mode == VDIN_WORK_MD_V4L) {
+	if (!devp->vb_queue.owner && devp->work_mode == VDIN_WORK_MD_V4L) {
 		for (i = 0; i < VDIN_CANVAS_MAX_CNT; i++) {
 			for (plane_idx = 0;
 				plane_idx < devp->v4l2_fmt.fmt.pix_mp.num_planes;
@@ -1510,14 +1507,19 @@ static int vdin_v4l2_release(struct file *file)
 			}
 		}
 		memset(devp->st_vdin_set_canvas_addr, 0, sizeof(devp->st_vdin_set_canvas_addr));
-
-		devp->afbce_flag = devp->afbce_flag_backup;
 	}
+	if (!owner && !last)
+		goto unlock;
+
+	if (devp->work_mode == VDIN_WORK_MD_V4L)
+		devp->afbce_flag = devp->afbce_flag_backup;
 	devp->work_mode = VDIN_WORK_MD_NORMAL;
 #ifdef CONFIG_AMLOGIC_MEDIA_TVIN_HDMI
 	if (IS_HDMI_SRC(devp->v4l2_port_cur))
 		rx_update_edid_callback(devp->v4l2_port_cur, RX_EDID_DEFAULT);
 #endif
+unlock:
+	mutex_unlock(&devp->lock);
 	return ret;
 }
 
@@ -1689,7 +1691,20 @@ static void vdin_vb2ops_buffer_queue(struct vb2_buffer *vb)
 
 static int vdin_v4l2_start_streaming(struct vdin_dev_s *devp)
 {
-	return 0;
+	int ret;
+
+	memset(&devp->vdin_v4l2.stats, 0, sizeof(devp->vdin_v4l2.stats));
+
+	ret = vdin_v4l2_start_tvin(devp);
+	if (ret) {
+		/* vb2 skips stop_streaming after a failed start */
+		mutex_lock(&devp->fe_lock);
+		if (!(devp->flags & VDIN_FLAG_DEC_STARTED))
+			vdin_close_fe(devp);
+		mutex_unlock(&devp->fe_lock);
+	}
+
+	return ret;
 }
 
 /*
@@ -1739,7 +1754,7 @@ static void vdin_vb2ops_stop_streaming(struct vb2_queue *vq)
 	struct vdin_dev_s *devp = vb2_get_drv_priv(vq);
 
 	dprintk(2, "%s\n", __func__);
-	/* TODO: stop DMA */
+	vdin_v4l2_stop_tvin(devp);
 
 	devp->vb_queue.streaming = false;
 
