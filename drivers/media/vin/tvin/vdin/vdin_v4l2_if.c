@@ -1620,6 +1620,17 @@ static int vdin_vb2ops_queue_setup(struct vb2_queue *vq,
 {
 	struct vdin_dev_s *devp = vb2_get_drv_priv(vq);
 	unsigned int i = 0;
+	unsigned int canvas_num;
+	u32 pixelformat = devp->v4l2_fmt.fmt.pix_mp.pixelformat;
+
+	/* nv12/nv21 take two canvas ids per buffer */
+	if (devp->dtdata->hw_ver < VDIN_HW_T7) {
+		canvas_num = devp->index ? VDIN1_CANVAS_MAX_CNT : VDIN0_CANVAS_MAX_CNT;
+		if (pixelformat == V4L2_PIX_FMT_NV12 || pixelformat == V4L2_PIX_FMT_NV21 ||
+		    pixelformat == V4L2_PIX_FMT_NV12M || pixelformat == V4L2_PIX_FMT_NV21M)
+			canvas_num /= 2;
+		*num_buffers = min(*num_buffers, canvas_num);
+	}
 
 	/*
 	 * NV12 every frame need two buffer
