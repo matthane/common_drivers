@@ -1912,6 +1912,10 @@ void vdin_set_hdr(struct vdin_dev_s *devp)
 		break;
 	}
 
+	/* v4l2 clients own the tone mapping: keep the stage in bypass */
+	if (devp->work_mode == VDIN_WORK_MD_V4L)
+		video_format = SIGNAL_SDR;
+
 #ifdef CONFIG_AMLOGIC_MEDIA_ENHANCEMENT_DOLBYVISION
 	if (for_amdv_certification()) {
 		/*not modify data*/
