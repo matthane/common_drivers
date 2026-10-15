@@ -158,10 +158,6 @@
 	status = "disabled";
 };
 
-&vdin1 {
-	status = "disabled";
-};
-
 &audiobus {
 	/delete-node/ tdmc;
 	/delete-node/ tdm@2;
