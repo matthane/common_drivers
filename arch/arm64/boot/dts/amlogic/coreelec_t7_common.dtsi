@@ -201,10 +201,6 @@
 	status = "disabled";
 };
 
-&vdin1 {
-	status = "disabled";
-};
-
 &i2c2 {
 	/delete-node/ sensor1@1a;
 	/delete-node/ sensor2@36;

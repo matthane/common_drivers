@@ -215,7 +215,7 @@
 };
 
 &vdin1 {
-	status = "disabled";
+	v4l_support_en;
 };
 
 &pinctrl_periphs {
