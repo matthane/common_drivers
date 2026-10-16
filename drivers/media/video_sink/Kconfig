@@ -25,13 +25,6 @@ config  AMLOGIC_MEDIA_VSYNC_RDMA
 
 endif
 
-config AMLOGIC_MEDIA_VIDEOCAPTURE
-    bool "Amlogic Video Capture support"
-    default n
-    help
-		Amlogic Video Media Capture support.
-		Internal Video Capture driver.
-
 config AMLOGIC_MEDIA_DUMMY_PROVIDER
     bool "Amlogic Dummy Video Provider"
     default n

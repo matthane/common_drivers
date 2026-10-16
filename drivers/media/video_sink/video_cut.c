@@ -74,9 +74,6 @@
 #endif
 #include "videolog.h"
 #include "video_reg.h"
-#ifdef CONFIG_AMLOGIC_MEDIA_VIDEOCAPTURE
-#include "amvideocap_priv.h"
-#endif
 #ifdef CONFIG_AM_VIDEO_LOG
 #define AMLOG
 #endif
@@ -338,9 +335,6 @@ static int vsync_rdma_line_max;
 #endif
 static u32 vpts_remainder;
 static int enable_video_discontinue_report = 1;
-#ifdef CONFIG_AMLOGIC_MEDIA_VIDEOCAPTURE
-static struct amvideocap_req *capture_frame_req;
-#endif
 bool force_scaler_all;
 bool lcevc_en;
 u32 lcevc_ctrl;
@@ -1517,57 +1511,6 @@ static struct vframe_receiver_s videopip_vf_recv;
 static struct vframe_receiver_s videopip2_vf_recv;
 
 
-
-#ifdef CONFIG_AMLOGIC_MEDIA_VIDEOCAPTURE
-static int ext_get_cur_video_frame(struct vframe_s **vf, int *canvas_index)
-{
-	if (!cur_dispbuf[0])
-		return -1;
-	atomic_inc(&cur_dispbuf[0]->use_cnt);
-	if (cur_dev->display_module != S5_DISPLAY_MODULE)
-		*canvas_index = READ_VCBUS_REG(vd_layer[0].vd_mif_reg.vd_if0_canvas0);
-	*vf = cur_dispbuf;
-	return 0;
-}
-
-int ext_put_video_frame(struct vframe_s *vf)
-{
-	u8 layer_id = 0;
-
-	if (vf == &vf_local[0])
-		return 0;
-	if (amvideo_vf_put(vf) < 0)
-		check_dispbuf(layer_id, vf, true);
-	return 0;
-}
-
-int ext_register_end_frame_callback(struct amvideocap_req *req)
-{
-	mutex_lock(&video_module_mutex);
-	capture_frame_req = req;
-	mutex_unlock(&video_module_mutex);
-	return 0;
-}
-
-int ext_frame_capture_poll(int endflags)
-{
-	mutex_lock(&video_module_mutex);
-	if (capture_frame_req && capture_frame_req->callback) {
-		struct vframe_s *vf;
-		int index;
-		int ret;
-		struct amvideocap_req *req = capture_frame_req;
-
-		ret = ext_get_cur_video_frame(&vf, &index);
-		if (!ret) {
-			req->callback(req->data, vf, index);
-			capture_frame_req = NULL;
-		}
-	}
-	mutex_unlock(&video_module_mutex);
-	return 0;
-}
-#endif
 
 #ifdef TV_3D_FUNCTION_OPEN
 /* judge the out mode is 240:LBRBLRBR  or 120:LRLRLR */
