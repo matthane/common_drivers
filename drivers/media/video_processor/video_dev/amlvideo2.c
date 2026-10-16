@@ -405,6 +405,8 @@ struct amlvideo2_node {
 	enum tvin_port_e porttype;
 #endif
 	unsigned int start_vdin_flag;
+	bool vdin_started;
+	int vdin_started_num;
 	struct ge2d_context_s *context;
 #ifdef CONFIG_AMLOGIC_MEDIA_TVIN
 	struct vdin_v4l2_ops_s vops;
@@ -4707,8 +4709,10 @@ static void amlvideo2_stop_thread(struct amlvideo2_node_dmaqueue *dma_q)
 
 		dma_q->kthread = NULL;
 	}
-	if (node->context)
+	if (node->context) {
 		destroy_ge2d_work_queue(node->context);
+		node->context = NULL;
+	}
 	mutex_unlock(&node->mutex);
 	if (amlvideo2_dbg_en & 1) {
 		if (node->vid == 0)
@@ -5348,7 +5352,7 @@ static int amlvideo2_stop_tvin_service(struct amlvideo2_node *node)
 		amlvideo2_stop_thread(&node->vidq);
 
 	if ((node->input == 0 || node->input == 0x1000C000) &&
-	    node->r_type == AML_RECEIVER_NONE) {
+	    node->r_type == AML_RECEIVER_NONE && node->vdin_started) {
 		if (amlvideo2_dbg_en)
 			pr_info("stop tvin service .\n");
 #ifdef CONFIG_AMLOGIC_MEDIA_TVIN
@@ -5356,7 +5360,8 @@ static int amlvideo2_stop_tvin_service(struct amlvideo2_node *node)
 			pr_info("stop_tvin_service func is NULL.\n");
 			return -1;
 		}
-		vops->stop_tvin_service(node->vdin_device_num);
+		vops->stop_tvin_service(node->vdin_started_num);
+		node->vdin_started = false;
 #endif
 	}
 
@@ -5370,6 +5375,7 @@ static int amlvideo2_start_tvin_service(struct amlvideo2_node *node)
 	struct vdin_v4l2_ops_s *vops = &node->vops;
 	struct vdin_parm_s para;
 	const struct vinfo_s *vinfo;
+	int ret;
 #endif
 	int dst_w, dst_h;
 	//int angle = node->qctl_regs[0];
@@ -5467,14 +5473,18 @@ static int amlvideo2_start_tvin_service(struct amlvideo2_node *node)
 				__func__);
 			return -1;
 		}
-		vops->start_tvin_service(node->vdin_device_num, &para);
+		ret = vops->start_tvin_service(node->vdin_device_num, &para);
 	} else {
 		if (!(vops->start_tvin_service_ex)) {
 			pr_info("start_tvin_service_ex is NULL.\n");
 			return -1;
 		}
-		vops->start_tvin_service_ex(node->vdin_device_num,
-					    node->vdin_port_ext, &para);
+		ret = vops->start_tvin_service_ex(node->vdin_device_num,
+						  node->vdin_port_ext, &para);
+	}
+	if (ret >= 0) {
+		node->vdin_started = true;
+		node->vdin_started_num = node->vdin_device_num;
 	}
 
 #endif
@@ -5831,8 +5841,12 @@ static int vidioc_streamon(struct file *file, void *priv, enum v4l2_buf_type i)
 	if (ret < 0) {
 		pr_info("%s amlvideo2 vdin start_tvin_service_ex fail\n",
 			__func__);
-		return 0;
+		amlvideo2_stop_thread(&node->vidq);
+		videobuf_streamoff(&fh->vb_vidq);
+		return ret;
 	}
+	node->vdin_started = true;
+	node->vdin_started_num = node->vdin_device_num;
 #endif
 start: node->frame_inittime = 1;
 	fh->is_streamed_on = 1;
@@ -5873,8 +5887,7 @@ static int vidioc_streamoff(struct file *file, void *priv, enum v4l2_buf_type i)
 			node->r_type, node->vid);
 		pr_info("vdin_device_num = %d\n", node->vdin_device_num);
 	}
-	if (node->start_vdin_flag ||
-	    node->r_type == AML_RECEIVER_NONE) {
+	if (node->vdin_started) {
 		if (amlvideo2_dbg_en)
 			pr_info("stop tvin service .\n");
 #ifdef CONFIG_AMLOGIC_MEDIA_TVIN
@@ -5887,7 +5900,8 @@ static int vidioc_streamoff(struct file *file, void *priv, enum v4l2_buf_type i)
 			return 0;
 		}
 
-		ret = vops->stop_tvin_service(node->vdin_device_num);
+		ret = vops->stop_tvin_service(node->vdin_started_num);
+		node->vdin_started = false;
 		if (ret < 0) {
 			pr_err("%s amlvideo2 vdin stop failed\n", __func__);
 			return 0;
@@ -6548,6 +6562,19 @@ static int amlvideo2_close(struct file *file)
 	struct amlvideo2_node *node = fh->node;
 	int temp_canvas;
 	int i;
+
+	if (fh->is_streamed_on) {
+#ifdef CONFIG_AMLOGIC_MEDIA_TVIN
+		if (node->vdin_started && node->vops.stop_tvin_service) {
+			node->vops.stop_tvin_service(node->vdin_started_num);
+			node->vdin_started = false;
+		}
+#endif
+		if (node->r_type == AML_RECEIVER_NONE)
+			amlvideo2_stop_thread(&node->vidq);
+		node->start_vdin_flag = 0;
+		fh->is_streamed_on = 0;
+	}
 
 	videobuf_stop(&fh->vb_vidq);
 	videobuf_mmap_free(&fh->vb_vidq);
