@@ -701,6 +701,14 @@ static int vdin_vidioc_g_fmt_vid_cap_mplane(struct file *file,
 	return 0;
 }
 
+static void vdin_v4l2_bound_size(struct vdin_dev_s *devp,
+				 struct v4l2_pix_format_mplane *pix_mp)
+{
+	pix_mp->width = clamp_t(u32, rounddown(pix_mp->width, devp->canvas_align),
+				devp->canvas_align, VDIN_4K_SIZE >> 16);
+	pix_mp->height = clamp_t(u32, rounddown(pix_mp->height, 2), 2, VDIN_4K_SIZE & 0xffff);
+}
+
 /*
  * for mplane
  * cmd ID:VIDIOC_S_FMT
@@ -729,6 +737,7 @@ static int vdin_vidioc_s_fmt_vid_cap_mplane(struct file *file,
 		dprintk(2, "%s:force pixelformat to 0x%x\n", __func__,
 			devp->v4l2_fmt.fmt.pix_mp.pixelformat);
 	}
+	vdin_v4l2_bound_size(devp, &fmt->fmt.pix_mp);
 #ifndef VDIN_V4L2_FILL_PIXFMT_MP
 	devp->v4l2_fmt.fmt.pix_mp.width	       = fmt->fmt.pix_mp.width;
 	devp->v4l2_fmt.fmt.pix_mp.height       = fmt->fmt.pix_mp.height;
@@ -1289,6 +1298,7 @@ static int vidioc_try_fmt_vid_cap_mplane(struct file *file, void *priv,
 			__func__, devp->index, f->fmt.pix_mp.pixelformat);
 		return -EINVAL;
 	}
+	vdin_v4l2_bound_size(devp, &f->fmt.pix_mp);
 
 	return 0;
 }
@@ -2117,6 +2127,16 @@ int vdin_v4l2_start_tvin(struct vdin_dev_s *devp)
 	if (devp->v4l2_fmt.fmt.pix_mp.width > vdin_cap_param.h_active ||
 		devp->v4l2_fmt.fmt.pix_mp.height > vdin_cap_param.v_active) {
 		dprintk(0, "%s,out of range!v4l2_fmt:%dx%d > active:%dx%d\n",
+			__func__, devp->v4l2_fmt.fmt.pix_mp.width,
+			devp->v4l2_fmt.fmt.pix_mp.height, vdin_cap_param.h_active,
+			vdin_cap_param.v_active);
+		return -EINVAL;
+	}
+
+	/* the vdin scalers cannot shrink by 32 or more */
+	if (devp->v4l2_fmt.fmt.pix_mp.width * 32 <= vdin_cap_param.h_active ||
+		devp->v4l2_fmt.fmt.pix_mp.height * 32 <= vdin_cap_param.v_active) {
+		dprintk(0, "%s,out of scale range!v4l2_fmt:%dx%d active:%dx%d\n",
 			__func__, devp->v4l2_fmt.fmt.pix_mp.width,
 			devp->v4l2_fmt.fmt.pix_mp.height, vdin_cap_param.h_active,
 			vdin_cap_param.v_active);
