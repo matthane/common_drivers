@@ -723,8 +723,23 @@ static int vdin_vidioc_s_fmt_vid_cap_mplane(struct file *file,
 	if (IS_ERR_OR_NULL(devp))
 		return -EFAULT;
 
-	if (vdin_v4l2_is_busy(devp, file))
+	if (vb2_is_busy(&devp->vb_queue))
 		return -EBUSY;
+
+	for (i = 0; i < ARRAY_SIZE(pix_formats); i++) {
+		if (fmt->fmt.pix_mp.pixelformat == pix_formats[i].fourcc)
+			break;
+	}
+	if (i >= ARRAY_SIZE(pix_formats)) {
+		dprintk(0, "%s vdin%d v4l2 do not support pixelformat=%#x\n",
+			__func__, devp->index, fmt->fmt.pix_mp.pixelformat);
+		return -EINVAL;
+	}
+	if (fmt->fmt.pix_mp.pixelformat == V4L2_PIX_FMT_NV12M ||
+	    fmt->fmt.pix_mp.pixelformat == V4L2_PIX_FMT_NV21M)
+		fmt->fmt.pix_mp.num_planes = 2;
+	else
+		fmt->fmt.pix_mp.num_planes = 1;
 
 	dprintk(2, "%s:wxh:%dx%d,quant:%d,enc:%d,field:%d,pixelformat:0x%x num_planes=%d\n",
 		__func__,
