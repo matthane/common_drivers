@@ -2088,6 +2088,8 @@ int vdin_v4l2_start_tvin(struct vdin_dev_s *devp)
 	int ret;
 	struct vdin_parm_s vdin_cap_param;
 	const struct tvin_format_s *fmt_info_p;
+	struct tvin_cutwin_s *cutwin = &devp->debug.cutwin;
+	unsigned int v_active;
 
 	/* TODO:get vd1/osd loopback source fmt */
 	if (devp->index)
@@ -2155,6 +2157,20 @@ int vdin_v4l2_start_tvin(struct vdin_dev_s *devp)
 			__func__, devp->v4l2_fmt.fmt.pix_mp.width,
 			devp->v4l2_fmt.fmt.pix_mp.height, vdin_cap_param.h_active,
 			vdin_cap_param.v_active);
+		return -EINVAL;
+	}
+
+	/* vdin1 lines are no wider than its line buffer under vertical scaling */
+	v_active = vdin_cap_param.v_active;
+	if (vdin_cap_param.h_active > cutwin->hs + cutwin->he &&
+	    v_active > cutwin->vs + cutwin->ve)
+		v_active -= cutwin->vs + cutwin->ve;
+	if (devp->index && devp->v4l2_fmt.fmt.pix_mp.height != v_active &&
+	    devp->v4l2_fmt.fmt.pix_mp.width > devp->dtdata->vdin1_line_buff_size) {
+		dprintk(0, "%s,out of line buffer!v4l2_fmt:%dx%d active height:%d line_buff:%d\n",
+			__func__, devp->v4l2_fmt.fmt.pix_mp.width,
+			devp->v4l2_fmt.fmt.pix_mp.height, v_active,
+			devp->dtdata->vdin1_line_buff_size);
 		return -EINVAL;
 	}
 
