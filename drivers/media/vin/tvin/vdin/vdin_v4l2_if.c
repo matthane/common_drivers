@@ -118,6 +118,9 @@ static struct vdin_v4l2_pix_fmt pix_formats[] = {
 
 	{.fourcc = V4L2_PIX_FMT_UYVY,
 	 .depth  = 16, },
+
+	{.fourcc = V4L2_PIX_FMT_AML_YUV422_10P,
+	 .depth  = 20, },
 };
 
 static struct v4l2_capability g_vdin_v4l2_cap[VDIN_MAX_DEVS] = {
@@ -254,6 +257,12 @@ void vdin_fill_pix_format(struct vdin_dev_s *devp)
 				v4l2_fmt->fmt.pix_mp.width * v4l2_fmt->fmt.pix_mp.height * 3 / 2;
 			v4l2_fmt->fmt.pix_mp.plane_fmt[0].bytesperline =
 				(v4l2_fmt->fmt.pix_mp.width * 12) >> 3;
+		} else if (v4l2_fmt->fmt.pix_mp.pixelformat == V4L2_PIX_FMT_AML_YUV422_10P) {
+			v4l2_fmt->fmt.pix_mp.plane_fmt[0].bytesperline =
+				roundup(v4l2_fmt->fmt.pix_mp.width * 5 / 2, devp->canvas_align);
+			v4l2_fmt->fmt.pix_mp.plane_fmt[0].sizeimage =
+				v4l2_fmt->fmt.pix_mp.plane_fmt[0].bytesperline *
+				v4l2_fmt->fmt.pix_mp.height;
 		}
 		v4l2_fmt->fmt.pix_mp.plane_fmt[1].sizeimage = 0;
 		v4l2_fmt->fmt.pix_mp.plane_fmt[1].bytesperline = 0;
@@ -299,6 +308,13 @@ void vdin_fill_pix_format(struct vdin_dev_s *devp)
 static bool vdin_v4l2_is_busy(struct vdin_dev_s *devp, struct file *file)
 {
 	return devp->vb_queue.owner && devp->vb_queue.owner != file->private_data;
+}
+
+/* 10 bits only for the vdin1 loopback; the t3x bit depth path forces 8 bits */
+static bool vdin_v4l2_fmt_supported(struct vdin_dev_s *devp, u32 fourcc)
+{
+	return fourcc != V4L2_PIX_FMT_AML_YUV422_10P ||
+	       (devp->index == 1 && devp->dtdata->hw_ver != VDIN_HW_T3X);
 }
 
 /*
@@ -730,7 +746,8 @@ static int vdin_vidioc_s_fmt_vid_cap_mplane(struct file *file,
 		if (fmt->fmt.pix_mp.pixelformat == pix_formats[i].fourcc)
 			break;
 	}
-	if (i >= ARRAY_SIZE(pix_formats)) {
+	if (i >= ARRAY_SIZE(pix_formats) ||
+	    !vdin_v4l2_fmt_supported(devp, fmt->fmt.pix_mp.pixelformat)) {
 		dprintk(0, "%s vdin%d v4l2 do not support pixelformat=%#x\n",
 			__func__, devp->index, fmt->fmt.pix_mp.pixelformat);
 		return -EINVAL;
@@ -1265,14 +1282,27 @@ static int vdin_vidioc_s_input(struct file *file, void *priv, unsigned int i)
 static int vdin_vidioc_enum_fmt_vid_cap(struct file *file, void *priv,
 				   struct v4l2_fmtdesc *f)
 {
-	struct vdin_v4l2_pix_fmt *fmt;
+	struct vdin_v4l2_pix_fmt *fmt = NULL;
+	struct vdin_dev_s *devp = video_drvdata(file);
+	unsigned int i;
+	unsigned int n = 0;
 
-	if (f->index >= ARRAY_SIZE(pix_formats))
+	for (i = 0; i < ARRAY_SIZE(pix_formats); i++) {
+		if (!vdin_v4l2_fmt_supported(devp, pix_formats[i].fourcc))
+			continue;
+		if (n++ == f->index) {
+			fmt = &pix_formats[i];
+			break;
+		}
+	}
+	if (!fmt)
 		return -EINVAL;
 
-	fmt = &pix_formats[f->index];
 	/* description will be filled by v4l_fill_fmtdesc */
 	f->pixelformat = fmt->fourcc;
+	if (fmt->fourcc == V4L2_PIX_FMT_AML_YUV422_10P)
+		strscpy(f->description, "YUV 4:2:2 10-bit full pack",
+			sizeof(f->description));
 
 	dprintk(0, "%s index:%d pixelformat:%x\n",
 		__func__, f->index, f->pixelformat);
@@ -1308,7 +1338,8 @@ static int vidioc_try_fmt_vid_cap_mplane(struct file *file, void *priv,
 		if (f->fmt.pix_mp.pixelformat == pix_formats[i].fourcc)
 			break;
 	}
-	if (i >= ARRAY_SIZE(pix_formats)) {
+	if (i >= ARRAY_SIZE(pix_formats) ||
+	    !vdin_v4l2_fmt_supported(devp, f->fmt.pix_mp.pixelformat)) {
 		dprintk(0, "%s vdin%d v4l2 do not support pixelformat=%#x\n",
 			__func__, devp->index, f->fmt.pix_mp.pixelformat);
 		return -EINVAL;
