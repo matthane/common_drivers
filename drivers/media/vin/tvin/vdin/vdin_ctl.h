@@ -332,6 +332,7 @@ bool vdin_is_convert_to_444(u32 format_convert);
 bool vdin_is_convert_to_422(u32 format_convert);
 bool vdin_is_convert_to_nv21(u32 format_convert);
 bool vdin_is_4k(struct vdin_dev_s *devp);
+bool vdin_is_v4l2_10bit(struct vdin_dev_s *devp);
 void vdin_set_matrix_color(struct vdin_dev_s *devp);
 void vdin_set_bist_pattern(struct vdin_dev_s *devp, unsigned int on_off, unsigned int pat);
 
