@@ -295,84 +295,6 @@ void vdin_fill_pix_format(struct vdin_dev_s *devp)
 		v4l2_fmt->fmt.pix_mp.plane_fmt[1].sizeimage);
 }
 
-static int vdin_v4l2_get_phy_addr(struct vdin_dev_s *devp,
-	struct v4l2_buffer *p, unsigned int plane_no)
-{
-	int idx;
-	int fd;
-	struct page *page;
-	struct vb2_queue *vb_que = NULL;
-	struct vb2_buffer *vb2buf = NULL;
-
-	if (p->m.planes[plane_no].m.fd < 0 || p->index >= devp->v4l2_req_buf_num) {
-		dprintk(0, "v4l2 buffer index=%d or fd=%d,out of range!!!\n ",
-			   p->index, p->m.planes[plane_no].m.fd);
-		return -EINVAL;
-	}
-
-	fd		= p->m.planes[0].m.fd;
-	idx		= p->index;
-
-	if (p->memory == V4L2_MEMORY_MMAP) {
-		vb_que  = &devp->vb_queue;
-		vb2buf = vb_que->bufs[p->index];
-		devp->st_vdin_set_canvas_addr[idx][plane_no].index = idx;
-		devp->st_vdin_set_canvas_addr[idx][plane_no].paddr =
-			vb2_dma_contig_plane_dma_addr(vb2buf, plane_no);
-		devp->st_vdin_set_canvas_addr[idx][plane_no].size  =
-			vb2buf->planes[plane_no].length;
-	} else if (p->memory == V4L2_MEMORY_DMABUF) {
-		fd = p->m.planes[plane_no].m.fd;
-		if (fd <= 0) {
-			dprintk(0, "VDIN err plane:%d,buf idx:%d,dmabuf == NULL\n",
-				plane_no, idx);
-			return -EINVAL;
-		}
-		devp->st_vdin_set_canvas_addr[idx][plane_no].fd    = fd;
-		devp->st_vdin_set_canvas_addr[idx][plane_no].index = idx;
-		devp->st_vdin_set_canvas_addr[idx][plane_no].dma_buffer = dma_buf_get(fd);
-		if (!devp->st_vdin_set_canvas_addr[idx][plane_no].dma_buffer) {
-			dprintk(0, "VDIN err plane:%d,buf idx:%d,dmabuf == NULL\n",
-				plane_no, idx);
-			return -1;
-		}
-		devp->st_vdin_set_canvas_addr[idx][plane_no].dmabuf_attach =
-			dma_buf_attach(devp->st_vdin_set_canvas_addr[idx][plane_no].dma_buffer,
-				devp->dev);
-		devp->st_vdin_set_canvas_addr[idx][plane_no].sg_table =
-			dma_buf_map_attachment(devp->st_vdin_set_canvas_addr[idx][plane_no]
-				.dmabuf_attach, DMA_BIDIRECTIONAL);
-		page = sg_page(devp->st_vdin_set_canvas_addr[idx][plane_no].sg_table->sgl);
-		devp->st_vdin_set_canvas_addr[idx][plane_no].paddr = PFN_PHYS(page_to_pfn(page));
-		devp->st_vdin_set_canvas_addr[idx][plane_no].size  =
-			devp->st_vdin_set_canvas_addr[idx][plane_no].dma_buffer->size;
-		dprintk(2, "vdin%d,fd:%d,phy_addr:%lx,size:%#x\n", devp->index, fd,
-			devp->st_vdin_set_canvas_addr[idx][plane_no].paddr,
-			devp->st_vdin_set_canvas_addr[idx][plane_no].size);
-	} else {
-		dprintk(0, "err.idx:%d,unsupported memory:%d\n", idx, p->memory);
-		return -1;
-	}
-
-	if (plane_no == VDIN_PLANES_IDX_Y)
-		devp->vf_mem_start[idx] =
-			devp->st_vdin_set_canvas_addr[idx][plane_no].paddr;
-	else
-		devp->vf_mem_c_start[idx] =
-			devp->st_vdin_set_canvas_addr[idx][plane_no].paddr;
-
-	devp->vf_mem_start[idx] =
-		roundup(devp->vf_mem_start[idx], devp->canvas_align);
-	devp->vf_mem_c_start[idx] =
-		roundup(devp->vf_mem_c_start[idx], devp->canvas_align);
-	dprintk(1, "%s vdin%d,paddr[%d][%d] = %lx,size=%x\n", __func__,
-		devp->index, idx, plane_no,
-		devp->st_vdin_set_canvas_addr[idx][plane_no].paddr,
-		devp->st_vdin_set_canvas_addr[idx][plane_no].size);
-
-	return 0;
-}
-
 static bool vdin_v4l2_is_busy(struct vdin_dev_s *devp, struct file *file)
 {
 	return devp->vb_queue.owner && devp->vb_queue.owner != file->private_data;
@@ -497,8 +419,8 @@ static int vdin_vidioc_reqbufs(struct file *file, void *priv,
 	ret = vb2_ioctl_reqbufs(file, priv, reqbufs);
 	if (ret < 0)
 		dprintk(0, "vb2_ioctl_reqbufs fail\n");
-
-	devp->v4l2_req_buf_num = reqbufs->count;
+	else
+		devp->v4l2_req_buf_num = reqbufs->count;
 
 	vb_buf = to_vb2_v4l2_buffer(devp->vb_queue.bufs[i]);
 	vdin_buf = to_vdin_vb_buf(vb_buf);
@@ -560,8 +482,8 @@ static int vdin_vidioc_qbuf(struct file *file, void *priv,
 	int ret = 0;
 	struct vb2_v4l2_buffer *vb = NULL;
 	struct vdin_vb_buff *vdin_buf = NULL;
-	int i;
 	unsigned int num_planes;
+	bool started;
 
 	if (IS_ERR_OR_NULL(devp))
 		return -EFAULT;
@@ -575,6 +497,7 @@ static int vdin_vidioc_qbuf(struct file *file, void *priv,
 	dprintk(3, "%s idx:%d planes:%d,streaming:%d\n", __func__,
 		p->index, num_planes, devp->vb_queue.streaming);
 
+	started = vb2_start_streaming_called(&devp->vb_queue);
 	ret = vb2_ioctl_qbuf(file, priv, p);
 	if (ret < 0) {
 		dprintk(0, "%s err\n", __func__);
@@ -582,7 +505,7 @@ static int vdin_vidioc_qbuf(struct file *file, void *priv,
 	}
 
 	/* recycle buffer */
-	if (devp->vb_queue.streaming) {
+	if (started) {
 		devp->vdin_v4l2.stats.que_cnt++;
 		if (!IS_ERR_OR_NULL(vdin_buf->v4l2_vframe_s)) {
 			receiver_vf_put(vdin_buf->v4l2_vframe_s, devp->vfp);
@@ -594,9 +517,6 @@ static int vdin_vidioc_qbuf(struct file *file, void *priv,
 		} else {
 			dprintk(0, "err vf null\n");
 		}
-	} else {
-		for (i = 0; i < num_planes; i++)
-			vdin_v4l2_get_phy_addr(devp, p, i);
 	}
 
 	return ret;
@@ -1529,6 +1449,9 @@ static int vdin_v4l2_release(struct file *file)
 			}
 		}
 		memset(devp->st_vdin_set_canvas_addr, 0, sizeof(devp->st_vdin_set_canvas_addr));
+		memset(devp->vf_mem_start, 0, sizeof(devp->vf_mem_start));
+		memset(devp->vf_mem_c_start, 0, sizeof(devp->vf_mem_c_start));
+		devp->v4l2_req_buf_num = 0;
 	}
 	if (!owner && !last)
 		goto unlock;
@@ -1656,6 +1579,10 @@ static int vdin_vb2ops_buffer_prepare(struct vb2_buffer *vb)
 	struct vb2_queue *queue = NULL;
 	/*uint size = 0;*/
 	/*unsigned int i;*/
+	unsigned int i;
+	unsigned long paddr;
+	unsigned long *addr;
+	bool started;
 
 	if (IS_ERR_OR_NULL(devp))
 		return -EINVAL;
@@ -1665,6 +1592,25 @@ static int vdin_vb2ops_buffer_prepare(struct vb2_buffer *vb)
 		vb->index, queue->num_buffers,
 		vb->num_planes, queue->queued_count,
 		vb2_buf_sts_to_str(vb->state));
+
+	/* vdin takes the buffer addresses when it starts; they must not move after */
+	started = vb2_start_streaming_called(queue);
+	if (vb->index >= devp->v4l2_req_buf_num)
+		return started ? -EINVAL : 0;
+	for (i = 0; i < vb->num_planes; i++) {
+		paddr = roundup(vb2_dma_contig_plane_dma_addr(vb, i),
+				devp->canvas_align);
+		if (i == VDIN_PLANES_IDX_Y)
+			addr = &devp->vf_mem_start[vb->index];
+		else
+			addr = &devp->vf_mem_c_start[vb->index];
+		if (started && paddr != *addr) {
+			dprintk(0, "%s buf %d plane %u moved\n", __func__,
+				vb->index, i);
+			return -EINVAL;
+		}
+		*addr = paddr;
+	}
 
 	//if (vb->num_planes > 1) {
 	//	for (i = 0; i < vb->num_planes; i++) {
@@ -1752,6 +1698,14 @@ static int vdin_vb2ops_start_streaming(struct vb2_queue *vq, unsigned int count)
 	buf_head = &devp->buf_list;
 	if (list_empty(buf_head)) {
 		dprintk(0, "buf_list is empty\n");
+		return -EINVAL;
+	}
+
+	/* vdin writes every buffer from the first frame on */
+	if (count != vq->num_buffers || vq->num_buffers != devp->v4l2_req_buf_num) {
+		dprintk(0, "%s %u of %u buffers queued\n", __func__,
+			count, vq->num_buffers);
+		vdin_return_all_buffers(devp, VB2_BUF_STATE_QUEUED);
 		return -EINVAL;
 	}
 
