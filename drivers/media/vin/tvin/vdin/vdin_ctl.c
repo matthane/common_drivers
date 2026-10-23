@@ -4836,8 +4836,8 @@ void vdin_set_hv_scale(struct vdin_dev_s *devp)
 
 	if (devp->prop.scaling4w < devp->h_active &&
 	    devp->prop.scaling4w > 0) {
-		if (devp->pre_h_scale_en && (devp->prop.scaling4w <=
-		    (devp->h_active >> 1)))
+		if ((devp->pre_h_scale_en || vdin_is_v4l2_10bit(devp)) &&
+		    devp->prop.scaling4w <= (devp->h_active >> 1))
 			vdin_set_pre_h_scale(devp);
 
 		if (devp->prop.scaling4w < devp->h_active)
@@ -4995,8 +4995,12 @@ void vdin_set_bitdepth(struct vdin_dev_s *devp)
 		break;
 	}
 
-	if (devp->work_mode == VDIN_WORK_MD_V4L)
+	if (vdin_is_v4l2_10bit(devp)) {
+		bit_dep = VDIN_COLOR_DEEPS_10BIT;
+		devp->full_pack = VDIN_422_FULL_PK_EN;
+	} else if (devp->work_mode == VDIN_WORK_MD_V4L) {
 		bit_dep = VDIN_COLOR_DEEPS_8BIT;
+	}
 	devp->source_bitdepth = bit_dep;
 #ifdef VDIN_BRINGUP_BYPASS_COLOR_CNVT
 	devp->source_bitdepth = devp->prop.colordepth;
@@ -5281,6 +5285,12 @@ bool vdin_is_4k(struct vdin_dev_s *devp)
 		return true;
 	else
 		return false;
+}
+
+bool vdin_is_v4l2_10bit(struct vdin_dev_s *devp)
+{
+	return devp->work_mode == VDIN_WORK_MD_V4L &&
+	       devp->v4l2_fmt.fmt.pix_mp.pixelformat == V4L2_PIX_FMT_AML_YUV422_10P;
 }
 
 bool vdin_is_hdr_signal_in(struct vdin_dev_s *devp)
