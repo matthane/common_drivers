@@ -80,13 +80,6 @@
 		status = "okay";
 	};
 
-	amvideocap {
-		compatible = "amlogic, amvideocap";
-		dev_name = "amvideocap.0";
-		status = "okay";
-		max_size = <34>; //34MB
-	};
-
 	dummy_venc: dummy_venc {
 		status = "disabled";
 	};

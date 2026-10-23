@@ -1588,76 +1588,6 @@ static void dump_vdin_reg(void)
 		reg001, reg002);
 }
 
-#ifdef CONFIG_AMLOGIC_MEDIA_VIDEOCAPTURE
-int ext_get_cur_video_frame(struct vframe_s **vf, int *canvas_index)
-{
-	if (!cur_dispbuf[0])
-		return -1;
-	*canvas_index = get_layer_display_canvas(0);
-	*vf = *cur_dispbuf;
-	return 0;
-}
-
-int ext_put_video_frame(struct vframe_s *vf)
-{
-	return 0;
-}
-
-int ext_register_end_frame_callback(struct amvideocap_req *req)
-{
-	struct video_layer_s *layer = &vd_layer[0];
-	enum video_capture_state capture_state = atomic_read(&layer->capture_use_cnt);
-
-	if (capture_state == CAPTURE_STATE_OFF)
-	{
-		return -ENODATA;
-	}
-	else if (capture_state == CAPTURE_STATE_CAPTURE)
-	{
-		if (req && !req->callback) {
-			atomic_set(&layer->capture_use_cnt, CAPTURE_STATE_ON);
-			layer->capture_frame_req = NULL;
-		}
-		return -EBUSY;
-	}
-	else if (capture_state == CAPTURE_STATE_ON && req && req->callback)
-	{
-		layer->capture_frame_req = req;
-		atomic_set(&layer->capture_use_cnt, CAPTURE_STATE_CAPTURE);
-		return -EBUSY;
-	}
-
-	return 0;
-}
-
-int ext_frame_capture_poll(struct vframe_s *vf)
-{
-	int ret = -EAGAIN;
-	static int capture_frame_toggle = 0;
-	struct video_layer_s *layer = &vd_layer[0];
-
-	if (capture_frame_toggle == 0 && vf) {
-		if (vf->duration > 0 && div_u64((u64)96000, vf->duration) > 30)
-			capture_frame_toggle = 1;
-		if ((atomic_read(&layer->capture_use_cnt) == CAPTURE_STATE_CAPTURE) && layer->capture_frame_req) {
-			struct amvideocap_req_data *reqdata =
-				(struct amvideocap_req_data *)layer->capture_frame_req->data;
-			int index = get_layer_display_canvas(0);
-
-			if (layer->capture_frame_req && layer->capture_frame_req->callback && reqdata && reqdata->privdata)
-				ret = layer->capture_frame_req->callback(reqdata->privdata, vf, index);
-
-			layer->capture_frame_req = NULL;
-			atomic_set(&layer->capture_use_cnt, CAPTURE_STATE_ON);
-		}
-	}
-	else
-		capture_frame_toggle = 0;
-
-	return ret;
-}
-#endif
-
 #ifdef TV_3D_FUNCTION_OPEN
 /* judge the out mode is 240:LBRBLRBR  or 120:LRLRLR */
 static void judge_3d_fa_out_mode(void)
@@ -3693,10 +3623,6 @@ static struct vframe_s *vsync_toggle_frame(struct vframe_s *vf, int line)
 
 	if (cur_dispbuf[0] && omx_secret_mode)
 		cur_disp_frame_index = cur_dispbuf[0]->frame_index;
-
-#ifdef CONFIG_AMLOGIC_MEDIA_VIDEOCAPTURE
-	ext_frame_capture_poll(cur_dispbuf[0]);
-#endif
 
 	if (first_picture) {
 		first_frame_toggled = 1;
