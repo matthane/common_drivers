@@ -373,6 +373,11 @@ static int vdin_v4l2_get_phy_addr(struct vdin_dev_s *devp,
 	return 0;
 }
 
+static bool vdin_v4l2_is_busy(struct vdin_dev_s *devp, struct file *file)
+{
+	return devp->vb_queue.owner && devp->vb_queue.owner != file->private_data;
+}
+
 /*
  * Query device capability
  * cmd ID:VIDIOC_QUERYCAP
@@ -456,6 +461,9 @@ static int vdin_vidioc_reqbufs(struct file *file, void *priv,
 
 	if (IS_ERR_OR_NULL(devp))
 		return -EPERM;
+
+	if (vdin_v4l2_is_busy(devp, file))
+		return -EBUSY;
 
 	if (reqbufs->memory != V4L2_MEMORY_DMABUF &&
 		reqbufs->memory != V4L2_MEMORY_MMAP) {
@@ -558,6 +566,9 @@ static int vdin_vidioc_qbuf(struct file *file, void *priv,
 	if (IS_ERR_OR_NULL(devp))
 		return -EFAULT;
 
+	if (p->index >= devp->vb_queue.num_buffers)
+		return -EINVAL;
+
 	vb = to_vb2_v4l2_buffer(devp->vb_queue.bufs[p->index]);
 	vdin_buf = to_vdin_vb_buf(vb);
 	num_planes = vb->vb2_buf.num_planes;
@@ -565,13 +576,15 @@ static int vdin_vidioc_qbuf(struct file *file, void *priv,
 		p->index, num_planes, devp->vb_queue.streaming);
 
 	ret = vb2_ioctl_qbuf(file, priv, p);
-	if (ret < 0)
+	if (ret < 0) {
 		dprintk(0, "%s err\n", __func__);
+		return ret;
+	}
 
 	/* recycle buffer */
 	if (devp->vb_queue.streaming) {
 		devp->vdin_v4l2.stats.que_cnt++;
-		if (!IS_ERR(vdin_buf->v4l2_vframe_s)) {
+		if (!IS_ERR_OR_NULL(vdin_buf->v4l2_vframe_s)) {
 			receiver_vf_put(vdin_buf->v4l2_vframe_s, devp->vfp);
 			dprintk(3, "[%s]vf idx:%d (0x%p) put back to pool,fd=%d\n",
 				__func__,
@@ -652,7 +665,7 @@ static int vdin_vidioc_streamon(struct file *file, void *priv,
 				enum v4l2_buf_type i)
 {
 	struct vdin_dev_s *devp = video_drvdata(file);
-	unsigned int ret = 0;
+	int ret = 0;
 
 	dprintk(2, "%s\n", __func__);
 
@@ -661,7 +674,7 @@ static int vdin_vidioc_streamon(struct file *file, void *priv,
 
 	ret = vb2_ioctl_streamon(file, priv, i);
 	dprintk(2, "%s\n", __func__);
-	return 0;
+	return ret;
 }
 
 static int vdin_vidioc_streamoff(struct file *file, void *priv,
@@ -781,6 +794,9 @@ static int vdin_vidioc_s_fmt_vid_cap_mplane(struct file *file,
 	if (IS_ERR_OR_NULL(devp))
 		return -EFAULT;
 
+	if (vdin_v4l2_is_busy(devp, file))
+		return -EBUSY;
+
 	dprintk(2, "%s:wxh:%dx%d,quant:%d,enc:%d,field:%d,pixelformat:0x%x num_planes=%d\n",
 		__func__,
 		fmt->fmt.pix_mp.width,	        fmt->fmt.pix_mp.height,
@@ -873,6 +889,9 @@ static int vdin_vidioc_s_ctrl(struct file *file, void *priv,
 {
 	int ret = 0;
 	struct vdin_dev_s *devp = video_drvdata(file);
+
+	if (vdin_v4l2_is_busy(devp, file))
+		return -EBUSY;
 
 	if (ctrl->id == V4L2_CID_EXT_CAPTURE_DIVIDE_FRAMERATE)
 		ret = vdin_vidioc_s_divide_fr(devp, ctrl);
@@ -1187,6 +1206,9 @@ static int vdin_vidioc_s_ext_ctrls(struct file *file, void *fh,
 	struct v4l2_ext_control *ctrl = a->controls;
 	struct vdin_dev_s *devp = video_drvdata(file);
 
+	if (vdin_v4l2_is_busy(devp, file))
+		return -EBUSY;
+
 	/* all controls in the control array must belong
 	 * to the same control class
 	 */
@@ -1244,10 +1266,12 @@ static int vdin_vidioc_s_input(struct file *file, void *priv, unsigned int i)
 		return -EINVAL;
 	}
 
+	if (vdin_v4l2_is_busy(devp, file))
+		return -EBUSY;
+
 	if (devp->flags & VDIN_FLAG_DEC_STARTED) {
 		dprintk(0, "%s warning VDIN_FLAG_DEC_STARTED\n", __func__);
-		stop_tvin_service(devp->index);
-		vdin_close_fe(devp);
+		return -EBUSY;
 	}
 
 	mutex_lock(&devp->fe_lock);
@@ -1466,8 +1490,6 @@ static int vdin_v4l2_open(struct file *file)
 	if (v4l2_fh_is_singular_file(file))
 		devp->afbce_flag_backup = devp->afbce_flag;
 	mutex_unlock(&devp->lock);
-
-	INIT_LIST_HEAD(&devp->buf_list);
 
 	return 0;
 }
@@ -1692,6 +1714,9 @@ static void vdin_vb2ops_buffer_queue(struct vb2_buffer *vb)
 static int vdin_v4l2_start_streaming(struct vdin_dev_s *devp)
 {
 	int ret;
+
+	if (devp->flags & VDIN_FLAG_DEC_STARTED)
+		return -EBUSY;
 
 	memset(&devp->vdin_v4l2.stats, 0, sizeof(devp->vdin_v4l2.stats));
 
